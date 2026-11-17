@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { encrypt, decrypt, sha256, verifyMaster, base64, redact } from '../src/crypto.js';
 import { authorize } from '../src/auth.js';
 import { readFileSchema, safePath } from '../src/github.js';
-import { keySchema } from '../src/admin.js';
+import { agentSchema, keySchema } from '../src/admin.js';
 import { type Env, type KeyRow, labelName, normalizeWebsite, repoName, website } from '../src/types.js';
 
 test('GCM binds all identity fields, detects tampering, and uses fresh nonces', async () => {
@@ -39,6 +39,21 @@ test('key enable action parses without website or secret', () => {
   assert.equal(keySchema.safeParse({ action: 'enable', service: 'github',
     label: 'old key', website: 'https://api.github.com',
     request_id: '22222222-2222-4222-8222-222222222222' }).success, false);
+});
+test('redaction masks upstream temporary tokens in download URLs', () => {
+  const url = 'https://raw.githubusercontent.com/o/r/main/hello.txt?token=ABC123xyz';
+  const clean = redact(url, []);
+  assert.equal(clean, 'https://raw.githubusercontent.com/o/r/main/hello.txt?token=[REDACTED]');
+  assert.equal(redact('{"a":1,"access_token":"sekret"}', []), '{"a":1,"access_token":"[REDACTED]"}');
+  assert.equal(redact('{"token":"ghs_abc123"}', []), '{"token":"[REDACTED]"}');
+  assert.equal(redact('x?foo=bar&token=t1&baz=2', []), 'x?foo=bar&token=[REDACTED]&baz=2');
+});
+test('agent add parses only a 64-hex token hash, never a raw token', () => {
+  const hash = 'a'.repeat(64);
+  const ok = agentSchema.safeParse({ id: 'pi', token_hash: hash, request_id: '33333333-3333-4333-8333-333333333333' });
+  assert.equal(ok.success, true);
+  assert.equal(agentSchema.safeParse({ id: 'pi', token_hash: 'raw-token-value', request_id: '33333333-3333-4333-8333-333333333333' }).success, false);
+  assert.equal(agentSchema.safeParse({ id: 'pi', token_hash: hash }).success, false);
 });
 test('github read file: branch is optional (default branch when omitted)', () => {
   const noBranch = readFileSchema.safeParse({ key_label: 'my key', repository: '0xSatwik/cf-d1-vault', path: 'README.md' });
