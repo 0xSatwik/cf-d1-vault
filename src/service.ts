@@ -36,7 +36,9 @@ export async function serviceRequest(env: Env, tokenHash: string, raw: unknown):
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json',
       'User-Agent': 'cf-d1-vault/1.0',
       ...(args.body === undefined ? {} : { 'Content-Type': 'application/json' }) },
-    body: args.body, signal: AbortSignal.timeout(15000)
+    // 25s, not longer: the Workers platform caps a request at ~30s wall-clock,
+    // so a longer timeout would be killed mid-flight instead of returning cleanly.
+    body: args.body, signal: AbortSignal.timeout(25000)
   });
   if (!response.ok) {
     await response.body?.cancel();
