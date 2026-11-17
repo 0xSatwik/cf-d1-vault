@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { encrypt, decrypt, sha256, verifyMaster, base64, redact } from '../src/crypto.js';
 import { authorize } from '../src/auth.js';
-import { safePath } from '../src/github.js';
+import { readFileSchema, safePath } from '../src/github.js';
 import { keySchema } from '../src/admin.js';
 import { type Env, type KeyRow, labelName, normalizeWebsite, repoName, website } from '../src/types.js';
 
@@ -39,6 +39,13 @@ test('key enable action parses without website or secret', () => {
   assert.equal(keySchema.safeParse({ action: 'enable', service: 'github',
     label: 'old key', website: 'https://api.github.com',
     request_id: '22222222-2222-4222-8222-222222222222' }).success, false);
+});
+test('github read file: branch is optional (default branch when omitted)', () => {
+  const noBranch = readFileSchema.safeParse({ key_label: 'my key', repository: '0xSatwik/cf-d1-vault', path: 'README.md' });
+  assert.equal(noBranch.success, true);
+  const withBranch = readFileSchema.safeParse({ key_label: 'my key', repository: '0xSatwik/cf-d1-vault', branch: 'main', path: 'README.md' });
+  assert.equal(withBranch.success, true);
+  assert.equal(withBranch.data.branch, 'main');
 });
 test('key delete action parses without website or secret', () => {
   const ok = keySchema.safeParse({ action: 'delete', service: 'github',
