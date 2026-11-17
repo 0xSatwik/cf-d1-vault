@@ -6,7 +6,7 @@ import { type Env, branchName, filePath, identifier, labelName, now, readBounded
   repoName, requestId, VaultError } from './types.js';
 
 const common = { key_label: labelName, repository: repoName };
-export const readFileSchema = z.object({ ...common, branch: branchName, path: filePath }).strict();
+export const readFileSchema = z.object({ ...common, branch: branchName.optional(), path: filePath }).strict();
 export const listIssuesSchema = z.object({ ...common, page: z.number().int().min(1).max(10).default(1),
   state: z.enum(['open', 'closed', 'all']).default('open') }).strict();
 export const createIssueSchema = z.object({ ...common, request_id: requestId,
@@ -53,7 +53,8 @@ export async function readFile(env: Env, tokenHash: string, raw: unknown): Promi
   const admission = await authorize(env, tokenHash, 'github', args.key_label);
   const token = await decrypt(env, admission.key);
   const url = endpoint(args.repository, `contents/${args.path.split('/').map(encodeURIComponent).join('/')}`);
-  url.searchParams.set('ref', args.branch);
+  // No branch given: omit ref and GitHub answers from the repo's default branch.
+  if (args.branch) url.searchParams.set('ref', args.branch);
   const response = await dispatch(env, tokenHash, args.key_label, admission, url, token);
   const data = z.object({ type: z.literal('file'), encoding: z.literal('base64'), size: z.number().max(32768),
     content: z.string().max(50000), sha: z.string() }).parse(JSON.parse(await readBounded(response, 65536)));
@@ -62,7 +63,7 @@ export async function readFile(env: Env, tokenHash: string, raw: unknown): Promi
   const content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
   await sampledRead(env, { agent_id: admission.agent.id, key_id: admission.key.id, grant_id: admission.grant.id,
     operation: 'github_read_file', status: 'succeeded', request_id: crypto.randomUUID() });
-  return { repository: args.repository, path: args.path, branch: args.branch, sha: data.sha,
+  return { repository: args.repository, path: args.path, branch: args.branch ?? null, sha: data.sha,
     content: redact(content, [token, env.VAULT_DEK_V1, env.VAULT_DEK_V2 ?? '', env.MASTER_SHA256, env.HUMAN_SHA256 ?? '']) };
 }
 export async function listIssues(env: Env, tokenHash: string, raw: unknown): Promise<unknown> {
