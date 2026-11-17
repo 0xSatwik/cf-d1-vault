@@ -54,12 +54,18 @@ function showRole(next) {
   field('unlock-form').querySelectorAll('input, button').forEach(el => { el.disabled = locked; });
   field('unlock-note').hidden = !locked;
 }
+function clearFormStatuses() {
+  setStatus('key-status', '', '');
+  setStatus('unlock-status', '', '');
+  setStatus('revoke-status', '', '');
+}
 function clearAuth() {
   ++authGeneration;
   field('master').value = '';
   field('secret').value = '';
   showRole(null);
   field('keys-list').replaceChildren();
+  clearFormStatuses();
   setStatus('auth-status', 'Signed out. Password cleared.', '');
   setStatus('keys-status', 'Sign in to see your keys.', '');
   field('master').focus();
@@ -148,19 +154,42 @@ async function run(button, statusId, task) {
   catch (error) { message(statusId, error.message); }
   finally { button.disabled = false; }
 }
-// Fill the website from the chosen service, unless the user already typed their own.
-field('key-service').addEventListener('input', () => {
-  const site = SERVICES[field('key-service').value.trim().toLowerCase()];
-  const current = field('key-website').value;
-  if (site && (current === '' || current === lastAutoWebsite)) {
-    field('key-website').value = site;
-    lastAutoWebsite = site;
+// Service is a real dropdown now (a datalist never opened on the user's phone).
+// Picking a known service fills its website; Custom shows a free-text field.
+function serviceValue(selectId, customId) {
+  const selected = field(selectId).value;
+  return selected === '__custom' ? field(customId).value.trim().toLowerCase() : selected;
+}
+function syncService(selectId, customId, websiteId) {
+  const selected = field(selectId).value;
+  field(customId + '-row').hidden = selected !== '__custom';
+  if (!websiteId) return;
+  const site = SERVICES[selected];
+  const current = field(websiteId).value;
+  if (site) {
+    if (current === '' || current === lastAutoWebsite) {
+      field(websiteId).value = site;
+      lastAutoWebsite = site;
+    }
+  } else if (current === lastAutoWebsite) {
+    field(websiteId).value = '';
+    lastAutoWebsite = '';
   }
-});
+}
+function setService(selectId, customId, service) {
+  const select = field(selectId);
+  const known = [...select.options].some(o => o.value === service);
+  select.value = known ? service : '__custom';
+  field(customId).value = known ? '' : service;
+  syncService(selectId, customId, selectId === 'key-service' ? 'key-website' : null);
+}
+field('key-service').addEventListener('change', () => syncService('key-service', 'key-service-custom', 'key-website'));
+field('unlock-service').addEventListener('change', () => syncService('unlock-service', 'unlock-service-custom', null));
+syncService('key-service', 'key-service-custom', 'key-website');
 field('key-form').addEventListener('submit', event => {
   event.preventDefault();
   void run(event.submitter, 'key-status', async () => {
-    const service = field('key-service').value.trim().toLowerCase();
+    const service = serviceValue('key-service', 'key-service-custom');
     const label = field('key-label').value.trim();
     const website = field('key-website').value.trim();
     // Mobile paste often adds a trailing space or newline; tokens never need it.
@@ -178,6 +207,7 @@ field('key-form').addEventListener('submit', event => {
     field('key-form').reset();
     field('key-action').value = 'add';
     lastAutoWebsite = '';
+    syncService('key-service', 'key-service-custom', 'key-website');
     await refreshKeys();
   });
 });
@@ -187,7 +217,7 @@ field('unlock-form').addEventListener('submit', event => {
     const label = field('unlock-label').value.trim();
     if (!labelPattern.test(label) || label.length > 80) throw new Error('Key names can use letters, digits, spaces, _ and -, up to 80 characters.');
     const grant = await request('/unlock', { agent_id: field('agent-id').value,
-      service: field('unlock-service').value.trim().toLowerCase(), key_label: label });
+      service: serviceValue('unlock-service', 'unlock-service-custom'), key_label: label });
     if (!identifier.test(grant.id) || !Number.isFinite(grant.expires_at)) throw new Error('Unexpected grant metadata.');
     message('unlock-status', `Grant ID: ${grant.id} · Expires: ${new Date(grant.expires_at * 1000).toISOString()} (${grant.expires_at} Unix seconds).`);
   });
@@ -215,7 +245,7 @@ async function refreshKeys() {
       rotate.type = 'button';
       rotate.addEventListener('click', () => {
         field('key-action').value = 'rotate';
-        field('key-service').value = key.service;
+        setService('key-service', 'key-service-custom', key.service);
         field('key-label').value = key.label;
         field('key-website').value = key.website;
         lastAutoWebsite = key.website;
@@ -226,30 +256,48 @@ async function refreshKeys() {
       });
       const disable = element('button', 'Disable', 'danger');
       disable.type = 'button';
-      disable.disabled = !key.enabled;
       disable.addEventListener('click', () => void run(disable, 'keys-status', async () => {
         await request('/admin/keys', { action: 'disable', service: key.service, label: key.label });
         await refreshKeys();
+        message('keys-status', 'Key disabled.');
+      }));
+      const enable = element('button', 'Enable', 'primary');
+      enable.type = 'button';
+      enable.addEventListener('click', () => void run(enable, 'keys-status', async () => {
+        await request('/admin/keys', { action: 'enable', service: key.service, label: key.label });
+        await refreshKeys();
+        message('keys-status', 'Key enabled.');
       }));
       const del = element('button', 'Delete', 'danger');
       del.type = 'button';
+      // In-page two-step confirm: native confirm() is auto-dismissed by
+      // automated browsers (and is a tiny, mis-tappable dialog on mobile),
+      // so the first click arms the button and the second deletes.
+      let deleteArmed = false;
+      let deleteArmTimer = null;
       del.addEventListener('click', () => {
-        if (!confirm(`Delete "${key.label}" for good? This cannot be undone.`)) return;
+        if (!deleteArmed) {
+          deleteArmed = true;
+          del.textContent = 'Confirm delete?';
+          del.classList.add('armed');
+          deleteArmTimer = setTimeout(() => {
+            deleteArmed = false;
+            del.textContent = 'Delete';
+            del.classList.remove('armed');
+          }, 5000);
+          return;
+        }
+        clearTimeout(deleteArmTimer);
+        deleteArmed = false;
+        del.textContent = 'Delete';
+        del.classList.remove('armed');
         void run(del, 'keys-status', async () => {
           await request('/admin/keys', { action: 'delete', service: key.service, label: key.label });
           await refreshKeys();
           message('keys-status', 'Key deleted.');
         });
       });
-      actions.append(rotate, disable, del);
-      // Rotate, Disable and Delete are master only. Human sign-in sees the
-      // buttons disabled, with the reason on hover, instead of hidden.
-      if (role !== 'master') {
-        for (const button of actions.querySelectorAll('button')) {
-          button.disabled = true;
-          button.title = 'Needs the master password — ask Muse to do this.';
-        }
-      }
+      actions.append(rotate, key.enabled ? disable : enable, del);
       card.append(actions);
       return card;
     });
@@ -265,6 +313,7 @@ field('master').addEventListener('input', () => {
   ++authGeneration;
   showRole(null);
   field('keys-list').replaceChildren();
+  clearFormStatuses();
   setStatus('auth-status', 'Sign in to continue.', '');
   setStatus('keys-status', 'Sign in to see your keys.', '');
 });
