@@ -64,7 +64,7 @@ export async function readFile(env: Env, tokenHash: string, raw: unknown): Promi
   await sampledRead(env, { agent_id: admission.agent.id, key_id: admission.key.id, grant_id: admission.grant.id,
     operation: operation.tool, status: 'succeeded', request_id: crypto.randomUUID() });
   return { repository: args.repository, path: args.path, branch: args.branch, sha: data.sha,
-    content: redact(content, [token, env.VAULT_DEK_V1, env.VAULT_DEK_V2 ?? '', env.MASTER_SHA256]) };
+    content: redact(content, [token, env.VAULT_DEK_V1, env.VAULT_DEK_V2 ?? '', env.MASTER_SHA256, env.HUMAN_SHA256 ?? '']) };
 }
 export async function listIssues(env: Env, tokenHash: string, raw: unknown): Promise<unknown> {
   const args = listIssuesSchema.parse(raw);
@@ -80,7 +80,7 @@ export async function listIssues(env: Env, tokenHash: string, raw: unknown): Pro
   await sampledRead(env, { agent_id: admission.agent.id, key_id: admission.key.id, grant_id: admission.grant.id,
     operation: operation.tool, status: 'succeeded', request_id: crypto.randomUUID() });
   return { page: args.page, issues: issues.filter(i => !i.pull_request).map(i => ({ number: i.number,
-    title: redact(i.title, [token, env.VAULT_DEK_V1, env.VAULT_DEK_V2 ?? '', env.MASTER_SHA256]), state: i.state })) };
+    title: redact(i.title, [token, env.VAULT_DEK_V1, env.VAULT_DEK_V2 ?? '', env.MASTER_SHA256, env.HUMAN_SHA256 ?? '']), state: i.state })) };
 }
 export async function createIssue(env: Env, tokenHash: string, raw: unknown): Promise<unknown> {
   if (env.ENABLE_GITHUB_WRITES !== 'true') throw new VaultError('writes_disabled');
