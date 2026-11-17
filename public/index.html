@@ -61,28 +61,6 @@
       <p id="auth-status" class="status" role="status"></p>
     </section>
 
-    <datalist id="services-list">
-      <option value="github">GitHub</option>
-      <option value="cloudflare">Cloudflare</option>
-      <option value="openrouter">OpenRouter</option>
-      <option value="openai">OpenAI</option>
-      <option value="anthropic">Anthropic</option>
-      <option value="google">Google AI</option>
-      <option value="composio">Composio</option>
-      <option value="pipedream">Pipedream</option>
-      <option value="e2b">E2B</option>
-      <option value="daytona">Daytona</option>
-      <option value="boat">Boat</option>
-      <option value="slack">Slack</option>
-      <option value="telegram">Telegram</option>
-      <option value="gmail">Gmail</option>
-      <option value="google-calendar">Google Calendar</option>
-      <option value="notion">Notion</option>
-      <option value="linear">Linear</option>
-      <option value="resend">Resend</option>
-      <option value="expo">Expo</option>
-    </datalist>
-
     <div class="columns">
       <section class="card" aria-labelledby="key-title">
         <div class="card-head">
@@ -92,7 +70,29 @@
           <div><h2 id="key-title">Add a key</h2><p>Service, a name, a website, and the key itself. Any token works — classic, fine-grained, API key.</p></div>
         </div>
         <form id="key-form" autocomplete="off">
-          <div class="grid"><label>Service<input id="key-service" list="services-list" required maxlength="80" placeholder="github" autocapitalize="none" spellcheck="false"></label><label>Key name<input id="key-label" required maxlength="80" placeholder="work"></label></div>
+          <div class="grid"><label>Service<select id="key-service">
+            <option value="github" selected>GitHub</option>
+            <option value="cloudflare">Cloudflare</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="google">Google AI</option>
+            <option value="composio">Composio</option>
+            <option value="pipedream">Pipedream</option>
+            <option value="e2b">E2B</option>
+            <option value="daytona">Daytona</option>
+            <option value="boat">Boat</option>
+            <option value="slack">Slack</option>
+            <option value="telegram">Telegram</option>
+            <option value="gmail">Gmail</option>
+            <option value="google-calendar">Google Calendar</option>
+            <option value="notion">Notion</option>
+            <option value="linear">Linear</option>
+            <option value="resend">Resend</option>
+            <option value="expo">Expo</option>
+            <option value="__custom">Custom service…</option>
+          </select></label><label>Key name<input id="key-label" required maxlength="80" placeholder="work"></label></div>
+          <label id="key-service-custom-row" hidden>Custom service<input id="key-service-custom" maxlength="80" placeholder="my-service" autocapitalize="none" spellcheck="false"></label>
           <label>Website<input id="key-website" type="text" inputmode="url" required maxlength="2048" placeholder="https://api.github.com" autocapitalize="none" spellcheck="false"></label>
           <label>Key value<input id="secret" type="password" required maxlength="2048" autocomplete="new-password" spellcheck="false" placeholder="Paste the token or API key"></label>
           <input id="key-action" type="hidden" value="add">
@@ -109,7 +109,29 @@
         </div>
         <form id="unlock-form" autocomplete="off">
           <label>Pi agent<input id="agent-id" required maxlength="80" placeholder="pi"></label>
-          <div class="grid"><label>Service<input id="unlock-service" list="services-list" required maxlength="80" placeholder="github" autocapitalize="none" spellcheck="false"></label><label>Key name<input id="unlock-label" required maxlength="80" placeholder="work"></label></div>
+          <div class="grid"><label>Service<select id="unlock-service">
+            <option value="github" selected>GitHub</option>
+            <option value="cloudflare">Cloudflare</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="google">Google AI</option>
+            <option value="composio">Composio</option>
+            <option value="pipedream">Pipedream</option>
+            <option value="e2b">E2B</option>
+            <option value="daytona">Daytona</option>
+            <option value="boat">Boat</option>
+            <option value="slack">Slack</option>
+            <option value="telegram">Telegram</option>
+            <option value="gmail">Gmail</option>
+            <option value="google-calendar">Google Calendar</option>
+            <option value="notion">Notion</option>
+            <option value="linear">Linear</option>
+            <option value="resend">Resend</option>
+            <option value="expo">Expo</option>
+            <option value="__custom">Custom service…</option>
+          </select></label><label>Key name<input id="unlock-label" required maxlength="80" placeholder="work"></label></div>
+          <label id="unlock-service-custom-row" hidden>Custom service<input id="unlock-service-custom" maxlength="80" placeholder="my-service" autocapitalize="none" spellcheck="false"></label>
           <p id="unlock-note" class="hint">Unlock needs the master password. Ask Muse to unlock a key for Pi.</p>
           <button type="submit" class="primary">Unlock for two hours</button><p id="unlock-status" class="status" role="status"></p>
         </form>
