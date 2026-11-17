@@ -200,9 +200,18 @@ A second label such as `personal` must be added and unlocked independently. The 
 
 ### Manual entry page
 
-Open the exact Worker origin `/` or `/manual` in a trusted browser. Enter the master in the password field, choose `add`, enter `work`, paste the PAT, choose encryption version 1 and enter the complete policy JSON. Submit once. The page sends same-origin `POST /admin/keys` with the master bearer header and a random request UUID. It clears password fields after dispatch and on page exit and renders fixed status text through `textContent`.
+Open the exact Worker origin `/` or `/manual` in a trusted browser. Enter your password and sign in. The role badge identifies owner (master) or key contributor (human) access. Use **Add a key** and its permission checkboxes and repository rows; no policy JSON is needed. **My keys** shows metadata and readable access details. The master also sees Rotate/Disable, **Unlock for Pi** and **Revoke**. Rotation fills the form with the existing policy and requires a replacement PAT.
 
-The page has no third-party code, inline scripts, localStorage, cookies for authentication, analytics, or credential export. A restrictive CSP allows only its same-origin external script and connection. All responses carry `Cache-Control: no-store`. Browser extensions, password managers, developer tools and a compromised browser remain part of the trusted administration environment. Merely opening the page grants no administrative access.
+The single password field sends its value as the Bearer credential for every admin call. The page checks `GET /whoami` on sign-in. Passwords remain only in page memory; the upstream PAT clears on submission, and both password fields clear on `pagehide`. No browser storage, authentication cookies, analytics, inline code or third-party scripts are used. The CSP allows same-origin external scripts, styles and connections only, with all other sources locked down. All responses carry `Cache-Control: no-store`.
+
+### Two administration passwords
+
+- **Master**: verified against `MASTER_SHA256`; full administration, including rotation, disabling keys, agent registration, unlocking and revoking.
+- **Human password**: chosen by the owner and verified against the optional `HUMAN_SHA256` Worker secret. It permits only key metadata listing and adding new keys, plus role discovery through `/whoami`. Every other admin action returns 403. It cannot overwrite an existing label.
+
+Muse provisions `HUMAN_SHA256` as the lowercase hex SHA-256 digest of the owner’s password using the trusted Cloudflare secret workflow. The raw human password is never committed, written to configuration, or sent to Pi. No password value is supplied by this repository. Keep the two credentials distinct; master verification takes precedence. If `HUMAN_SHA256` is absent, human access is disabled. Choose a strong, unique password: a bare SHA-256 verifier provides no password-hardening against offline guessing if exposed. Browser extensions and a compromised browser remain within the trusted administration boundary.
+
+The page shell is public; authentication protects system metadata and mutations. A sign-in does not grant access beyond the server-enforced role.
 
 ### Rotate or disable a PAT
 
@@ -353,10 +362,11 @@ The Worker atomically reserves a mandatory audit row and durable `(agent_id,requ
 
 ## API reference
 
-Every admin route requires `Authorization: Bearer <MASTER_SECRET>`; Pi's request bearer is insufficient. POST bodies must be JSON, at most 32 KiB, with a UUID `request_id`. All schemas reject extra fields.
+Every admin route requires a Bearer credential. The master has full access; the human password may only list keys, add new keys and call `/whoami`. Pi's request bearer is insufficient. POST bodies must be JSON, at most 32 KiB, with a UUID `request_id`. All schemas reject extra fields.
 
 | Route | Method | Body / result |
 | --- | --- | --- |
+| `/whoami` | GET | Master or human; `{role: "master" | "human"}` |
 | `/mcp` | POST | Official MCP protocol; request-only bearer |
 | `/unlock` | POST | `agent_id,service,key_label,allowed_tools,resources,request_id`; grant metadata |
 | `/revoke` | POST | `target: grant/agent/key,id,request_id`; status |
@@ -367,6 +377,71 @@ Every admin route requires `Authorization: Bearer <MASTER_SECRET>`; Pi's request
 | `/` or `/manual` | GET | Same-origin manual entry page |
 
 Only `github` is implemented. No decrypt/export endpoint exists. A future service needs its own reviewed adapter, schemas and policy mapping. Error responses are fixed codes; caught exception objects, upstream error bodies, headers, credentials and raw arguments are never serialized.
+
+
+The complete machine-readable API reference is served at [`/llms.txt`](public/llms.txt), with an identical `/llm.txt` alias. It documents every endpoint, authentication role, request/response shape, MCP initialization and tool calls, and curl examples. Both files are uploaded by the existing Wrangler `[assets] directory = "./public"` configuration and explicitly allowed by the Worker router.
+
+### Curl examples
+
+Run in Bash with Python 3. Set `$VAULT_URL` to the exact Worker origin (no trailing slash) and `$MASTER` in a trusted shell. Replace example metadata before use. The human password can replace `$MASTER` only for add-key and list-keys. Each command generates a new request UUID; inspect metadata before repeating a mutation whose result is uncertain. Unlock retries should reuse the same UUID and arguments.
+
+**Add key**
+
+```sh
+# Reads the PAT without echo; requires bash and Python 3.
+read -r -s -p 'GitHub PAT: ' VAULT_PAT; printf '\n'
+export VAULT_PAT
+python3 - <<'PY' | curl --fail-with-body -sS "$VAULT_URL/admin/keys" \
+  -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' --data-binary @-
+import json, os, uuid
+print(json.dumps({"action":"add","service":"github","label":"work",
+  "secret":os.environ["VAULT_PAT"],"enc_version":1,
+  "policy":{"allowed_tools":["github_read_file","github_list_issues"],
+    "resources":[{"repository":"example/project","branches":["main"],"paths":["README.md"]}]},
+  "request_id":str(uuid.uuid4())}))
+PY
+unset VAULT_PAT
+```
+
+**List keys**
+
+```sh
+curl --fail-with-body -sS "$VAULT_URL/admin/keys" \
+  -H "Authorization: Bearer $MASTER"
+```
+
+**Unlock**
+
+```sh
+python3 - <<'PY' | curl --fail-with-body -sS "$VAULT_URL/unlock" \
+  -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' --data-binary @-
+import json, uuid
+print(json.dumps({"agent_id":"pi-main","service":"github","key_label":"work",
+  "allowed_tools":["github_read_file","github_list_issues"],
+  "resources":[{"repository":"example/project","branches":["main"],"paths":["README.md"]}],
+  "request_id":str(uuid.uuid4())}))
+PY
+```
+
+**Revoke**
+
+```sh
+python3 - <<'PY' | curl --fail-with-body -sS "$VAULT_URL/revoke" \
+  -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' --data-binary @-
+import json, uuid
+print(json.dumps({"target":"grant","id":"REPLACE_WITH_GRANT_ID","request_id":str(uuid.uuid4())}))
+PY
+```
+
+**Disable key**
+
+```sh
+python3 - <<'PY' | curl --fail-with-body -sS "$VAULT_URL/admin/keys" \
+  -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' --data-binary @-
+import json, uuid
+print(json.dumps({"action":"disable","service":"github","label":"work","request_id":str(uuid.uuid4())}))
+PY
+```
 
 ## Local development and verification
 
