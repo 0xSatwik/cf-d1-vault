@@ -26,7 +26,7 @@ export const website = z.string().regex(/^https:\/\/\S{1,2048}$/);
 export function normalizeWebsite(value: string): string {
   return value.replace(/\/+$/, '');
 }
-// Validators for API-call parameters Pi mentions in chat (repo, branch, file).
+// Validators for API-call parameters the agent mentions in chat (repo, branch, file).
 // These are call arguments, not stored policy: the vault stores no repo/branch/path.
 // GitHub owner/repo names are case-insensitive, so uppercase is allowed.
 export const repoName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/);
