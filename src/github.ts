@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { authorize, type Admission } from './auth.js';
 import { auditStatement, finishAudit, sampledRead } from './audit.js';
 import { decrypt, redact, sha256, unbase64 } from './crypto.js';
-import { type Env, type Operation, branchName, filePath, identifier, now, readBounded,
+import { type Env, branchName, filePath, identifier, now, readBounded,
   repoName, requestId, VaultError } from './types.js';
 
 const common = { key_label: identifier, repository: repoName };
@@ -21,15 +21,15 @@ function endpoint(repository: string, suffix: string): URL {
   const [owner, repo] = repository.split('/');
   return new URL(`https://api.github.com/repos/${encodeURIComponent(owner!)}/${encodeURIComponent(repo!)}/${suffix}`);
 }
-async function dispatch(env: Env, tokenHash: string, label: string, operation: Operation,
+async function dispatch(env: Env, tokenHash: string, label: string,
   admitted: Admission, url: URL, token: string, body?: string): Promise<Response> {
   // Fresh primary read immediately before EACH network dispatch; never retry automatically.
-  const fresh = await authorize(env, tokenHash, label, operation);
+  const fresh = await authorize(env, tokenHash, 'github', label);
   if (fresh.key.id !== admitted.key.id || fresh.key.ciphertext !== admitted.key.ciphertext ||
       fresh.key.nonce !== admitted.key.nonce || fresh.key.enc_version !== admitted.key.enc_version)
     throw new VaultError('unlock_required');
   const response = await fetch(url, {
-    method: body === undefined ? 'GET' : 'POST', redirect: 'error',
+    method: body === undefined ? 'GET' : 'POST', redirect: 'manual',
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'cf-d1-vault/1.0',
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
@@ -50,43 +50,40 @@ async function dispatch(env: Env, tokenHash: string, label: string, operation: O
 export async function readFile(env: Env, tokenHash: string, raw: unknown): Promise<unknown> {
   const args = readFileSchema.parse(raw);
   if (!safePath(args.path)) throw new VaultError('sensitive_path');
-  const operation: Operation = { tool: 'github_read_file', repository: args.repository, branch: args.branch, path: args.path };
-  const admission = await authorize(env, tokenHash, args.key_label, operation);
+  const admission = await authorize(env, tokenHash, 'github', args.key_label);
   const token = await decrypt(env, admission.key);
   const url = endpoint(args.repository, `contents/${args.path.split('/').map(encodeURIComponent).join('/')}`);
   url.searchParams.set('ref', args.branch);
-  const response = await dispatch(env, tokenHash, args.key_label, operation, admission, url, token);
+  const response = await dispatch(env, tokenHash, args.key_label, admission, url, token);
   const data = z.object({ type: z.literal('file'), encoding: z.literal('base64'), size: z.number().max(32768),
     content: z.string().max(50000), sha: z.string() }).parse(JSON.parse(await readBounded(response, 65536)));
   const bytes = unbase64(data.content.replace(/\s/g, ''));
   if (bytes.length > 32768) throw new VaultError('too_large', 413);
   const content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
   await sampledRead(env, { agent_id: admission.agent.id, key_id: admission.key.id, grant_id: admission.grant.id,
-    operation: operation.tool, status: 'succeeded', request_id: crypto.randomUUID() });
+    operation: 'github_read_file', status: 'succeeded', request_id: crypto.randomUUID() });
   return { repository: args.repository, path: args.path, branch: args.branch, sha: data.sha,
     content: redact(content, [token, env.VAULT_DEK_V1, env.VAULT_DEK_V2 ?? '', env.MASTER_SHA256, env.HUMAN_SHA256 ?? '']) };
 }
 export async function listIssues(env: Env, tokenHash: string, raw: unknown): Promise<unknown> {
   const args = listIssuesSchema.parse(raw);
-  const operation: Operation = { tool: 'github_list_issues', repository: args.repository };
-  const admission = await authorize(env, tokenHash, args.key_label, operation);
+  const admission = await authorize(env, tokenHash, 'github', args.key_label);
   const token = await decrypt(env, admission.key);
   const url = endpoint(args.repository, 'issues');
   url.search = new URLSearchParams({ state: args.state, page: String(args.page), per_page: '20' }).toString();
-  const response = await dispatch(env, tokenHash, args.key_label, operation, admission, url, token);
+  const response = await dispatch(env, tokenHash, args.key_label, admission, url, token);
   const issues = z.array(z.object({ number: z.number().int(), title: z.string().max(2048),
     state: z.string(), pull_request: z.unknown().optional() })).max(20)
     .parse(JSON.parse(await readBounded(response, 131072)));
   await sampledRead(env, { agent_id: admission.agent.id, key_id: admission.key.id, grant_id: admission.grant.id,
-    operation: operation.tool, status: 'succeeded', request_id: crypto.randomUUID() });
+    operation: 'github_list_issues', status: 'succeeded', request_id: crypto.randomUUID() });
   return { page: args.page, issues: issues.filter(i => !i.pull_request).map(i => ({ number: i.number,
     title: redact(i.title, [token, env.VAULT_DEK_V1, env.VAULT_DEK_V2 ?? '', env.MASTER_SHA256, env.HUMAN_SHA256 ?? '']), state: i.state })) };
 }
 export async function createIssue(env: Env, tokenHash: string, raw: unknown): Promise<unknown> {
   if (env.ENABLE_GITHUB_WRITES !== 'true') throw new VaultError('writes_disabled');
   const args = createIssueSchema.parse(raw);
-  const operation: Operation = { tool: 'github_create_issue', repository: args.repository };
-  const admission = await authorize(env, tokenHash, args.key_label, operation);
+  const admission = await authorize(env, tokenHash, 'github', args.key_label);
   // Request ID covers exact key and arguments without persisting their contents.
   const fingerprint = await sha256(JSON.stringify([admission.key.id, args]));
   const old = await env.DB.prepare('SELECT fingerprint,status FROM write_operations WHERE agent_id=? AND request_id=?')
@@ -99,13 +96,13 @@ export async function createIssue(env: Env, tokenHash: string, raw: unknown): Pr
   const auditId = crypto.randomUUID();
   await env.DB.batch([
     auditStatement(env, { agent_id: admission.agent.id, key_id: admission.key.id, grant_id: admission.grant.id,
-      operation: operation.tool, status: 'reserved', request_id: args.request_id }, auditId),
+      operation: 'github_create_issue', status: 'reserved', request_id: args.request_id }, auditId),
     env.DB.prepare(`INSERT INTO write_operations(agent_id,request_id,key_id,fingerprint,status,created_at)
       VALUES(?,?,?,?,'reserved',?)`).bind(admission.agent.id, args.request_id, admission.key.id, fingerprint, now())
   ]);
   let status = 'unknown';
   try {
-    const response = await dispatch(env, tokenHash, args.key_label, operation, admission,
+    const response = await dispatch(env, tokenHash, args.key_label, admission,
       endpoint(args.repository, 'issues'), token, JSON.stringify({ title: args.title, body: args.body }));
     // Consume only bounded selected response; a parsing failure leaves an uncertain operation.
     const issue = z.object({ number: z.number().int() }).parse(JSON.parse(await readBounded(response, 65536)));
