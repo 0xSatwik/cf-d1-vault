@@ -1,4 +1,4 @@
-import { equalHash, sha256, verifyMaster } from './crypto.js';
+import { equalHash, sha256 } from './crypto.js';
 import { type AgentRow, type Env, type GrantRow, type KeyRow, type Operation, type Policy,
   now, parsePolicy, VaultError } from './types.js';
 
@@ -7,8 +7,17 @@ export function bearer(request: Request): string {
   if (!match?.[1]) throw new VaultError('unauthorized', 401);
   return match[1];
 }
+export type AdminRole = 'master' | 'human';
+export async function adminRole(request: Request, env: Env): Promise<AdminRole> {
+  const match = /^Bearer (.{1,512})$/.exec(request.headers.get('Authorization') ?? '');
+  if (!match?.[1]) throw new VaultError('unauthorized', 401);
+  const hash = await sha256(match[1]);
+  if (equalHash(hash, env.MASTER_SHA256)) return 'master';
+  if (env.HUMAN_SHA256 && equalHash(hash, env.HUMAN_SHA256)) return 'human';
+  throw new VaultError('unauthorized', 401);
+}
 export async function requireMaster(request: Request, env: Env): Promise<void> {
-  if (!await verifyMaster(bearer(request), env.MASTER_SHA256)) throw new VaultError('unauthorized', 401);
+  if (await adminRole(request, env) !== 'master') throw new VaultError('forbidden', 403);
 }
 export async function authenticate(request: Request, env: Env): Promise<AgentRow> {
   return authenticateHash(env, await sha256(bearer(request)));
