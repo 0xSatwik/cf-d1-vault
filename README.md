@@ -105,7 +105,7 @@ Auth: `Authorization: Bearer <credential>` on every authenticated call. Master i
 - `POST /revoke` (master) — `{"target":"grant"|"agent"|"key","id","request_id"}`. Revoking an agent revokes its grants; disabling a key revokes its grants.
 - `POST /mcp` — agent bearer only. Stateless Streamable HTTP, POST only (GET/DELETE return 405, batches rejected).
 
-All POST admin bodies: `Content-Type: application/json`, ≤32768 bytes, strict JSON objects (no extra properties). `request_id` must be a UUID. Errors: `{"error":"<fixed_code>"}` with 400/401/403/404/405/409/413/415/503. No caught exception, upstream body, or credential is ever exposed. An untrusted host, mismatched `Origin`, or `Sec-Fetch-Site: cross-site` is refused. No CORS. Curl may omit Origin. Identifiers: 1–80 ASCII letters, digits, underscore or hyphen.
+All POST admin bodies: `Content-Type: application/json`, ≤32768 bytes, strict JSON objects (no extra properties). `request_id` must be a UUID. Errors: `{"error":"<fixed_code>"}` with 400/401/403/404/405/409/413/415/503. No caught exception, upstream body, or credential is ever exposed. An untrusted host, mismatched `Origin`, or `Sec-Fetch-Site: cross-site` is refused. No CORS. Curl may omit Origin. Identifiers: 1–80 ASCII letters, digits, underscore or hyphen. Key names may also contain spaces (no leading, trailing, or double space).
 
 ## MCP tools (Pi)
 
