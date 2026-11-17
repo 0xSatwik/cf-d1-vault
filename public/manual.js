@@ -1,6 +1,8 @@
 'use strict';
 const field = id => document.getElementById(id);
 const identifier = /^[A-Za-z0-9_-]{1,80}$/;
+// Key names may contain spaces: "GitHub work token" is a valid name.
+const labelPattern = /^[A-Za-z0-9](?:[A-Za-z0-9_-]| [A-Za-z0-9_-])*$/;
 // Pre-filled services from the Rakazo project (plus the ones we run on).
 // The website is only a starting point — edit it for any service.
 const SERVICES = {
@@ -46,6 +48,11 @@ function showRole(next) {
       : 'You can add keys and view your key list.';
   }
   if (next !== 'master') field('key-action').value = 'add';
+  // The unlock form is visible to everyone, but only the master can use it.
+  // Human sign-in shows the note instead of hiding the card entirely.
+  const locked = next !== 'master';
+  field('unlock-form').querySelectorAll('input, button').forEach(el => { el.disabled = locked; });
+  field('unlock-note').hidden = !locked;
 }
 function clearAuth() {
   ++authGeneration;
@@ -156,24 +163,31 @@ field('key-form').addEventListener('submit', event => {
     const service = field('key-service').value.trim().toLowerCase();
     const label = field('key-label').value.trim();
     const website = field('key-website').value.trim();
-    const secret = field('secret').value;
+    // Mobile paste often adds a trailing space or newline; tokens never need it.
+    const secret = field('secret').value.trim();
     if (!identifier.test(service)) throw new Error('Use a short service name, letters, digits, _ or -.');
-    if (!identifier.test(label)) throw new Error('Use a short key name, letters, digits, _ or -.');
+    if (!labelPattern.test(label) || label.length > 80) throw new Error('Key names can use letters, digits, spaces, _ and -, up to 80 characters.');
     if (!/^https:\/\/\S+$/.test(website)) throw new Error('Website must start with https:// and contain no spaces.');
     if (!/^[\x21-\x7e]{1,2048}$/.test(secret)) throw new Error('The key value must contain 1–2048 printable ASCII characters without spaces.');
-    const payload = { action: field('key-action').value, service, label, website, secret };
-    field('secret').value = '';
+    const action = field('key-action').value;
+    const payload = { action, service, label, website, secret };
     await request('/admin/keys', payload);
-    message('key-status', 'Key saved. Rotation revokes all existing grants for this key.');
+    message('key-status', action === 'rotate'
+      ? 'Key rotated. All existing grants for this key were revoked.'
+      : 'Key saved.');
+    field('key-form').reset();
     field('key-action').value = 'add';
+    lastAutoWebsite = '';
     await refreshKeys();
   });
 });
 field('unlock-form').addEventListener('submit', event => {
   event.preventDefault();
   void run(event.submitter, 'unlock-status', async () => {
+    const label = field('unlock-label').value.trim();
+    if (!labelPattern.test(label) || label.length > 80) throw new Error('Key names can use letters, digits, spaces, _ and -, up to 80 characters.');
     const grant = await request('/unlock', { agent_id: field('agent-id').value,
-      service: field('unlock-service').value.trim().toLowerCase(), key_label: field('unlock-label').value });
+      service: field('unlock-service').value.trim().toLowerCase(), key_label: label });
     if (!identifier.test(grant.id) || !Number.isFinite(grant.expires_at)) throw new Error('Unexpected grant metadata.');
     message('unlock-status', `Grant ID: ${grant.id} · Expires: ${new Date(grant.expires_at * 1000).toISOString()} (${grant.expires_at} Unix seconds).`);
   });
