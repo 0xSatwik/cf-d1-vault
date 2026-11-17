@@ -19,6 +19,10 @@ const keySchema = z.discriminatedUnion('action', [
     request_id: requestId }).strict(),
   z.object({ action: z.literal('disable'), service: serviceName, label: labelName,
     request_id: requestId }).strict(),
+  // Re-enable a disabled key without changing its secret. Grants revoked at
+  // disable time stay revoked; a fresh unlock is needed to use it again.
+  z.object({ action: z.literal('enable'), service: serviceName, label: labelName,
+    request_id: requestId }).strict(),
   // Hard delete: removes the key row plus its grants and write idempotency rows.
   // Audit rows stay as history. Master only (the human gate below allows add only).
   z.object({ action: z.literal('delete'), service: serviceName, label: labelName,
@@ -53,10 +57,13 @@ export async function admin(request: Request, env: Env, path: string): Promise<R
   }
   if (role === 'human' && !(path === '/admin/keys' && ['GET', 'POST'].includes(request.method)))
     throw new VaultError('forbidden', 403);
-  // Check the human action before any database or audit side effects.
+  // Human sign-in can list keys and manage them (add/rotate/disable/delete/
+  // enable). Unlock, revoke and agents stay master only.
   const raw = request.method === 'POST' ? await body(request) : undefined;
   if (role === 'human' && request.method === 'POST' &&
-      (typeof raw !== 'object' || raw === null || !('action' in raw) || raw.action !== 'add'))
+      (typeof raw !== 'object' || raw === null || !('action' in raw) ||
+       typeof raw.action !== 'string' ||
+       !['add', 'rotate', 'disable', 'delete', 'enable'].includes(raw.action)))
     throw new VaultError('forbidden', 403);
   await prune(env);
   if (path === '/admin/keys' && request.method === 'GET') {
@@ -145,6 +152,8 @@ export async function admin(request: Request, env: Env, path: string): Promise<R
       statements.push(env.DB.prepare('DELETE FROM keys WHERE id=?').bind(id));
     } else if (args.action === 'disable') {
       statements.push(env.DB.prepare('UPDATE keys SET enabled=0 WHERE id=?').bind(id));
+    } else if (args.action === 'enable') {
+      statements.push(env.DB.prepare('UPDATE keys SET enabled=1 WHERE id=?').bind(id));
     } else {
       const site = normalizeWebsite(args.website);
       const encrypted = await encrypt(env, { id, service: args.service, label: args.label, enc_version: args.enc_version }, args.secret);
@@ -154,7 +163,7 @@ export async function admin(request: Request, env: Env, path: string): Promise<R
       else statements.push(env.DB.prepare(`UPDATE keys SET website=?,ciphertext=?,nonce=?,enc_version=?,enabled=1 WHERE id=?`)
         .bind(site, encrypted.ciphertext, encrypted.nonce, args.enc_version, id));
     }
-    if (old && args.action !== 'delete') statements.push(env.DB.prepare('UPDATE grants SET revoked_at=? WHERE key_id=? AND revoked_at IS NULL').bind(now(), id));
+    if (old && args.action !== 'delete' && args.action !== 'enable') statements.push(env.DB.prepare('UPDATE grants SET revoked_at=? WHERE key_id=? AND revoked_at IS NULL').bind(now(), id));
     await env.DB.batch(statements);
     return json({ id, service: args.service, label: args.label, action: args.action });
   }
