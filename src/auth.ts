@@ -30,7 +30,7 @@ export async function authenticateHash(env: Env, hash: string): Promise<AgentRow
 }
 export interface Admission { agent: AgentRow; key: KeyRow; grant: GrantRow }
 // Authorization is the grant alone: agent + service + key label, unexpired, unrevoked.
-// No stored repo/branch/path policy — what Pi may do with the key is said in chat.
+// No stored repo/branch/path policy — what the agent may do with the key is said in chat.
 export async function authorize(env: Env, tokenHash: string, service: string, label: string): Promise<Admission> {
   const rows = await env.DB.prepare(`SELECT k.*, a.id AS agent_id, a.token_hash,
     a.revoked_at AS agent_revoked,
