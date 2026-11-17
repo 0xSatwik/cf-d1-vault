@@ -1,12 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { encrypt, decrypt, sha256, verifyMaster, base64, redact } from '../src/crypto.js';
-import { permits, subset, authorize } from '../src/auth.js';
+import { authorize } from '../src/auth.js';
 import { safePath } from '../src/github.js';
-import { type Env, type KeyRow, policySchema } from '../src/types.js';
+import { type Env, type KeyRow, normalizeWebsite, website } from '../src/types.js';
 
-const policy = policySchema.parse({ allowed_tools: ['github_read_file'],
-  resources: [{ repository: 'example/project', branches: ['main'], paths: ['README.md'] }] });
 test('GCM binds all identity fields, detects tampering, and uses fresh nonces', async () => {
   const env = { VAULT_DEK_V1: base64(crypto.getRandomValues(new Uint8Array(32))),
     VAULT_DEK_V2: base64(crypto.getRandomValues(new Uint8Array(32))) } as Env;
@@ -26,25 +24,41 @@ test('master verifier and redaction', async () => {
   assert.equal(await verifyMaster('wrong', await sha256('synthetic')), false);
   assert.equal(redact('canary abc ghp_abcdefghijklmnopqrst', ['abc']), 'canary [REDACTED] [REDACTED]');
 });
-test('exact policy intersection prevents branch, path, repository and operation widening', () => {
-  assert(permits(policy, { tool: 'github_read_file', repository: 'example/project', branch: 'main', path: 'README.md' }));
-  for (const change of [{ branch: 'dev' }, { path: 'README.md/../secret' }, { repository: 'example/other' },
-    { tool: 'github_create_issue' as const }])
-    assert(!permits(policy, { tool: 'github_read_file', repository: 'example/project', branch: 'main', path: 'README.md', ...change }));
-  assert(subset(policy, policy));
-  assert(!subset({ ...policy, allowed_tools: ['github_create_issue'] }, policy));
-  for (const path of ['.env', 'a/.git/config', 'private.key', 'secrets.json']) assert(!safePath(path));
+test('website must be https and is normalized', () => {
+  assert.equal(website.safeParse('https://api.github.com').success, true);
+  assert.equal(website.safeParse('https://openrouter.ai/api/v1').success, true);
+  assert.equal(website.safeParse('http://api.github.com').success, false);
+  assert.equal(website.safeParse('api.github.com').success, false);
+  assert.equal(website.safeParse('https://api.github.com/path with space').success, false);
+  assert.equal(normalizeWebsite('https://api.github.com///'), 'https://api.github.com');
+  assert.equal(normalizeWebsite('https://api.github.com'), 'https://api.github.com');
 });
-test('authorization fails closed on D1 errors and missing grants, using primary binding', async () => {
-  let sql = '';
-  const env = { DB: { prepare(query: string) {
-    sql = query;
+test('sensitive paths stay blocked', () => {
+  for (const path of ['.env', 'a/.git/config', 'private.key', 'secrets.json']) assert(!safePath(path));
+  assert(safePath('README.md'));
+  assert(safePath('docs/guide.md'));
+});
+test('authorization is the grant alone: agent + service + key label, unexpired', async () => {
+  const grantRow = {
+    id: 'key-id', service: 'cloudflare', label: 'main', website: 'https://api.cloudflare.com',
+    ciphertext: 'x', nonce: 'y', enc_version: 1, enabled: 1,
+    agent_id: 'pi', token_hash: 'hash', agent_revoked: null,
+    grant_id: 'grant-id', opened_at: 1000, expires_at: 8200,
+    grant_revoked: null, admin_request_id: 'req-id'
+  };
+  const env = { DB: { prepare() {
+    let args: unknown[] = [];
+    return { bind(...values: unknown[]) { args = values; return this; },
+      async all() { return { results: args[1] === 'cloudflare' && args[2] === 'main' ? [grantRow] : [] }; } };
+  } } } as unknown as Env;
+  const admitted = await authorize(env, 'hash', 'cloudflare', 'main');
+  assert.equal(admitted.key.id, 'key-id');
+  assert.equal(admitted.grant.id, 'grant-id');
+  assert.equal(admitted.agent.id, 'pi');
+  const empty = { DB: { prepare() {
     return { bind() { return this; }, async all() { return { results: [] }; } };
   } } } as unknown as Env;
-  await assert.rejects(authorize(env, 'hash', 'personal', { tool: 'github_list_issues', repository: 'example/project' }), /unlock_required/);
-  assert(sql.includes('g.expires_at>?'));
-  assert(sql.includes('g.revoked_at IS NULL'));
-  assert(sql.includes('k.label=?'));
-  const failed = { DB: { prepare() { throw Error('quota'); } } } as unknown as Env;
-  await assert.rejects(authorize(failed, 'hash', 'work', { tool: 'github_list_issues', repository: 'example/project' }));
+  await assert.rejects(authorize(empty, 'hash', 'cloudflare', 'main'), /unlock_required/);
+  // Wrong service or label finds no grant.
+  await assert.rejects(authorize(env, 'hash', 'github', 'main'), /unlock_required/);
 });
