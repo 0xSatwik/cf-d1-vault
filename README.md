@@ -19,7 +19,7 @@ There is no stored repo/branch/path policy. What Pi may do with a key is said **
 Trusted Muse administration environment / human browser
   holds: raw high-entropy master, upstream key during entry
   POST /admin/agents  -> register SHA-256 bearer hash
-  POST /admin/keys    -> add / rotate / disable encrypted key rows
+  POST /admin/keys    -> add / rotate / disable / delete encrypted key rows
   POST /unlock        -> agent + service + key label, 7200 seconds
   POST /revoke        -> grant / agent / key
               | HTTPS Authorization: Bearer <MASTER_SECRET>
@@ -85,7 +85,7 @@ Any other service works too: type its slug and website. Token type does not matt
 Open the Worker URL in a browser. One password field, two levels:
 
 - **Human password** (owner-chosen): add keys and view the key list. Nothing else.
-- **Master password** (Muse-held): everything — add, rotate, disable, unlock, revoke, agents.
+- **Master password** (Muse-held): everything — add, rotate, disable, delete, unlock, revoke, agents.
 
 Add a key asks for service, key name, website, key value — nothing else. Unlock for Pi asks for agent, service, key name — two hours. The signed-in state is a green banner ("Signed in as Key contributor" / "Signed in as Owner") with a Sign out button; the password form hides while signed in. Wrong password shows red "Password not recognized." Keys list shows service, label, website, status and ID. Secret values are never shown.
 
@@ -99,7 +99,7 @@ Auth: `Authorization: Bearer <credential>` on every authenticated call. Master i
 
 - `GET /whoami` → `{"role":"master"|"human"}`
 - `GET /admin/keys` → `{"keys":[{"id","service","label","website","enc_version","enabled"}],"limit":100}`
-- `POST /admin/keys` — `{"action":"add"|"rotate"|"disable","service","label","website","secret","request_id"}`. `disable` takes only service, label, request_id. Rotate and disable revoke all live grants for the key. A label must be unique per service. `secret` is 1–2048 printable ASCII, no spaces. `website` must start with `https://`.
+- `POST /admin/keys` — `{"action":"add"|"rotate"|"disable"|"delete","service","label","website","secret","request_id"}`. `disable` and `delete` take only service, label, request_id. Rotate and disable revoke all live grants for the key. `delete` hard-deletes the key row plus its grants and write idempotency rows (audit history stays); it cannot be undone. Delete is master only. A label must be unique per service. `secret` is 1–2048 printable ASCII, no spaces. `website` must start with `https://`.
 - `POST /admin/agents` (master) — `{"id","token_hash","request_id"}`. `token_hash` is the lowercase hex SHA-256 of the agent's request-only bearer. The raw bearer is never stored.
 - `POST /unlock` (master) — `{"agent_id","service","key_label","request_id"}` → a grant `{"id","agent_id","key_id","service","opened_at","expires_at","revoked_at"}` with `expires_at = opened_at + 7200`. Replaying the same `request_id` returns the original grant, never a fresh one. The key must exist and be enabled; the agent must exist and not be revoked.
 - `POST /revoke` (master) — `{"target":"grant"|"agent"|"key","id","request_id"}`. Revoking an agent revokes its grants; disabling a key revokes its grants.
@@ -136,7 +136,7 @@ Every tool call re-checks the grant against D1 primary immediately before dispat
 
 - **Keys are AES-256-GCM encrypted in D1.** The AAD binds each ciphertext to `['cf-vault', key id, service, label, enc_version]` — a ciphertext copied to another key, service, or label does not decrypt. Nonces are fresh per encryption. The DEK (`VAULT_DEK_V1`, optional `VAULT_DEK_V2`) lives only as a Worker secret; the raw master lives only with Muse. The Worker stores only `MASTER_SHA256` / `HUMAN_SHA256` verifiers.
 - **No key ever leaves the Worker.** Tool results are redacted: `ghp_`/`github_pat_` token patterns are masked before short secrets, longest secret first, so a short secret inside a longer token cannot split it and leak the rest.
-- **Grants are the only authorization.** A grant names one agent, one service, one key label, and expires exactly 7200 seconds after opening. Expiry is checked on every operation against D1 primary — no positive auth cache. Rotation/disable/revoke kills live grants immediately (checked again before each dispatch).
+- **Grants are the only authorization.** A grant names one agent, one service, one key label, and expires exactly 7200 seconds after opening. Expiry is checked on every operation against D1 primary — no positive auth cache. Rotation/disable/revoke/delete kills live grants immediately (checked again before each dispatch).
 - **Writes are safe.** Issue creation (the only write tool) is off unless `ENABLE_GITHUB_WRITES=true`, and uses a durable reservation: same request UUID + same fingerprint returns the stored outcome; a different fingerprint conflicts; an uncertain outcome is never silently retried.
 - **Audit is metadata only.** Unlock/revoke/admin and sampled reads are logged (IDs, operation, status, request ID) — never bodies, keys, or upstream responses. Audit is capped (10,000 rows, 1,000/day) and pruned to 7 days.
 - **Admin idempotency.** Every admin mutation carries a UUID `request_id`, recorded in `admin_requests`. Reuse returns 409. Unlock replays return the original grant.
