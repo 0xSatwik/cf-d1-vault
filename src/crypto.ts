@@ -54,6 +54,11 @@ export async function decrypt(env: Env, row: KeyRow): Promise<string> {
 export function redact(value: string, secrets: string[]): string {
   // Mask complete token patterns before short configured secrets can split them.
   let clean = value.replace(/(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{16,})/g, '[REDACTED]');
+  // Upstream-issued temporary tokens are credentials too, even though they are
+  // not the stored key — e.g. GitHub puts a ?token= on file download URLs,
+  // and OAuth-style responses carry "access_token" / "token" JSON fields.
+  clean = clean.replace(/([?&](?:token|access_token)=)[^&\s"']+/g, '$1[REDACTED]');
+  clean = clean.replace(/("(?:access_token|token)"\s*:\s*")[^"]*(")/g, '$1[REDACTED]$2');
   for (const secret of [...secrets].sort((a, b) => b.length - a.length))
     if (secret) clean = clean.split(secret).join('[REDACTED]');
   return clean;
