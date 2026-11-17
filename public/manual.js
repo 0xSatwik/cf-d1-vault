@@ -58,6 +58,21 @@ function clearFormStatuses() {
   setStatus('key-status', '', '');
   setStatus('unlock-status', '', '');
   setStatus('revoke-status', '', '');
+  setStatus('agent-status', '', '');
+}
+// Values typed into the forms must not survive a sign-out: the next person
+// at this browser would otherwise see the previous key names and agent.
+function resetForms() {
+  field('key-form').reset();
+  field('key-action').value = 'add';
+  lastAutoWebsite = '';
+  syncService('key-service', 'key-service-custom', 'key-website');
+  field('unlock-form').reset();
+  syncService('unlock-service', 'unlock-service-custom', null);
+  field('revoke-form').reset();
+  field('agent-form').reset();
+  field('agents-list').replaceChildren();
+  setStatus('agents-status', 'Sign in as Owner to see agents.', '');
 }
 function clearAuth() {
   ++authGeneration;
@@ -65,6 +80,7 @@ function clearAuth() {
   field('secret').value = '';
   showRole(null);
   field('keys-list').replaceChildren();
+  resetForms();
   clearFormStatuses();
   setStatus('auth-status', 'Signed out. Password cleared.', '');
   setStatus('keys-status', 'Sign in to see your keys.', '');
@@ -84,6 +100,7 @@ async function signIn() {
     showRole(result.role);
     setStatus('auth-status', result.role === 'human' ? 'Signed in — you can add keys and view your key list.' : 'Signed in — you have full access.', 'ok');
     await refreshKeys();
+    if (result.role === 'master') await refreshAgents();
   } catch (error) {
     if (generation === authGeneration) {
       setStatus('auth-status', error.message, 'error');
@@ -214,10 +231,13 @@ field('key-form').addEventListener('submit', event => {
 field('unlock-form').addEventListener('submit', event => {
   event.preventDefault();
   void run(event.submitter, 'unlock-status', async () => {
+    const agent = field('agent-id').value.trim();
+    const service = serviceValue('unlock-service', 'unlock-service-custom');
     const label = field('unlock-label').value.trim();
+    if (!identifier.test(agent)) throw new Error('Enter the agent name, letters, digits, _ or -.');
+    if (!identifier.test(service)) throw new Error('Use a short service name, letters, digits, _ or -.');
     if (!labelPattern.test(label) || label.length > 80) throw new Error('Key names can use letters, digits, spaces, _ and -, up to 80 characters.');
-    const grant = await request('/unlock', { agent_id: field('agent-id').value,
-      service: serviceValue('unlock-service', 'unlock-service-custom'), key_label: label });
+    const grant = await request('/unlock', { agent_id: agent, service, key_label: label });
     if (!identifier.test(grant.id) || !Number.isFinite(grant.expires_at)) throw new Error('Unexpected grant metadata.');
     message('unlock-status', `Grant ID: ${grant.id} · Expires: ${new Date(grant.expires_at * 1000).toISOString()} (${grant.expires_at} Unix seconds).`);
   });
@@ -225,11 +245,48 @@ field('unlock-form').addEventListener('submit', event => {
 field('revoke-form').addEventListener('submit', event => {
   event.preventDefault();
   void run(event.submitter, 'revoke-status', async () => {
-    await request('/revoke', { target: field('revoke-target').value, id: field('revoke-id').value });
+    const id = field('revoke-id').value.trim();
+    if (!identifier.test(id)) throw new Error('Enter the ID to revoke — a grant, agent or key ID, not a key label.');
+    await request('/revoke', { target: field('revoke-target').value, id });
     message('revoke-status', 'Revocation completed. Requests already dispatched cannot be recalled.');
     await refreshKeys();
   });
 });
+async function sha256hex(text) {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function refreshAgents() {
+  await run(field('refresh-agents'), 'agents-status', async () => {
+    const data = await request('/admin/agents');
+    if (!Array.isArray(data.agents)) throw new Error('Unexpected agent metadata.');
+    const cards = data.agents.map(agent => {
+      const card = element('article', undefined, 'key-card');
+      card.append(element('h3', agent.id),
+        element('p', agent.revoked ? 'Revoked' : 'Active', agent.revoked ? 'status-disabled' : 'status-ready'),
+        element('p', agent.revoked ? 'Use Revoke above to remove it fully.' : 'May call /mcp with its token.', 'hint'));
+      return card;
+    });
+    field('agents-list').replaceChildren(...cards);
+    message('agents-status', `${cards.length} agent(s) shown. Maximum ${data.limit}.`);
+  });
+}
+field('agent-form').addEventListener('submit', event => {
+  event.preventDefault();
+  void run(event.submitter, 'agent-status', async () => {
+    const id = field('agent-name').value.trim();
+    const token = field('agent-token').value.trim();
+    if (!identifier.test(id)) throw new Error('Enter the agent name, letters, digits, _ or -.');
+    if (!/^[\x21-\x7e]{1,2048}$/.test(token)) throw new Error('The token must contain 1–2048 printable ASCII characters without spaces.');
+    // The raw token never leaves this browser: only its SHA-256 goes to the Worker.
+    const token_hash = await sha256hex(token);
+    await request('/admin/agents', { id, token_hash });
+    message('agent-status', 'Agent added. Save its token — it cannot be shown again.');
+    field('agent-form').reset();
+    await refreshAgents();
+  });
+});
+field('refresh-agents').addEventListener('click', () => void refreshAgents());
 async function refreshKeys() {
   await run(field('refresh-keys'), 'keys-status', async () => {
     const data = await request('/admin/keys');
@@ -313,6 +370,7 @@ field('master').addEventListener('input', () => {
   ++authGeneration;
   showRole(null);
   field('keys-list').replaceChildren();
+  resetForms();
   clearFormStatuses();
   setStatus('auth-status', 'Sign in to continue.', '');
   setStatus('keys-status', 'Sign in to see your keys.', '');
