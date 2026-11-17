@@ -146,21 +146,6 @@ button.danger { color: #ffd7de; background: var(--red-soft); border-color: rgba(
 a { color: #8ebdff; }
 p { color: var(--muted); }
 
-/* ---------- policy builder ---------- */
-fieldset { border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin: 18px 0; min-width: 0; background: rgba(0, 0, 0, .18); }
-legend { font-weight: 700; font-size: .9rem; padding: 0 8px; }
-.resource { background: rgba(255, 255, 255, .02); border-left: 3px solid var(--accent); }
-.tools { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0 4px; }
-.chip {
-  display: inline-flex; align-items: center; gap: 8px; margin: 0;
-  font-size: .88rem; font-weight: 600; color: #c9d6ee; cursor: pointer;
-  background: rgba(255, 255, 255, .05); border: 1px solid var(--border-strong);
-  border-radius: 999px; padding: 9px 15px; transition: all .15s;
-}
-.chip:has(input:checked) { color: #081120; background: linear-gradient(135deg, #8fb0ff, #4dd8ff); border-color: transparent; }
-.chip:has(input:disabled) { opacity: .5; cursor: default; }
-.chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-.chip .write-note { font-size: .78rem; font-weight: 400; color: inherit; opacity: .75; }
 .signin { border-color: rgba(124, 156, 255, .3); background: linear-gradient(180deg, rgba(124, 156, 255, .09), rgba(255, 255, 255, .02)); }
 
 /* ---------- keys list ---------- */
