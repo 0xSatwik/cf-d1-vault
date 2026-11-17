@@ -1,0 +1,10 @@
+# ~/.codex/config.toml
+[mcp_servers.vault]
+url = "https://<your-worker>.workers.dev/mcp"
+bearer_token_env_var = "VAULT_AGENT_TOKEN"
+
+# Set the token once in the environment (it stays out of the config file):
+# export VAULT_AGENT_TOKEN=<agent-token>
+#
+# Inline alternative (token in the file, not recommended):
+# http_headers = { Authorization = "Bearer <agent-token>" }
