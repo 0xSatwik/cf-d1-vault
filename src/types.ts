@@ -6,6 +6,7 @@ export interface Env {
   PUBLIC_ORIGIN: string;
   ENABLE_GITHUB_WRITES: string;
   MASTER_SHA256: string;
+  HUMAN_SHA256?: string;
   VAULT_DEK_V1: string;
   VAULT_DEK_V2?: string;
 }
