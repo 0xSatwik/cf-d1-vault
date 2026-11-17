@@ -78,6 +78,8 @@ function clearAuth() {
   ++authGeneration;
   field('master').value = '';
   field('secret').value = '';
+  field('connect-token').value = '';
+  refreshConnectSnippet();
   showRole(null);
   field('keys-list').replaceChildren();
   resetForms();
@@ -390,6 +392,44 @@ async function checkWorker() {
   });
 }
 field('check-worker').addEventListener('click', () => void checkWorker());
+// Connect your agent: build a copy-paste setup for any MCP client.
+// The token is only pasted into the text below, inside this browser.
+// It is never sent anywhere, and it is cleared when you leave the page.
+function connectSnippet() {
+  const client = field('connect-client').value;
+  const token = field('connect-token').value.trim();
+  const url = window.location.origin + '/mcp';
+  if (!token) return 'Paste the agent token to see its setup.';
+  if (!/^[\x21-\x7e]{1,2048}$/.test(token)) return 'The token must contain 1–2048 printable ASCII characters without spaces.';
+  const json = (type) => JSON.stringify({ mcpServers: { vault: { ...(type ? { type } : {}), url, headers: { Authorization: 'Bearer ' + token } } } }, null, 2);
+  switch (client) {
+    case 'claude-code':
+      return 'claude mcp add --transport http vault ' + url + ' --header "Authorization: Bearer ' + token + '"';
+    case 'cursor':
+      return '~/.cursor/mcp.json:\n' + json();
+    case 'cline':
+      return 'Cline MCP settings:\n' + json('streamableHttp');
+    case 'codex':
+      return '~/.codex/config.toml:\n[mcp_servers.vault]\nurl = "' + url + '"\nbearer_token_env_var = "VAULT_AGENT_TOKEN"\n\nThen set the token once:\nexport VAULT_AGENT_TOKEN=' + token;
+    case 'pi':
+      return '~/.pi/agent/mcp.json:\n' + json('streamable-http');
+    default:
+      return 'Any Streamable HTTP MCP client:\nURL: ' + url + '\nHeader: Authorization: Bearer ' + token + '\nAccept: application/json, text/event-stream';
+  }
+}
+function refreshConnectSnippet() {
+  field('connect-snippet').textContent = connectSnippet();
+}
+field('connect-client').addEventListener('change', refreshConnectSnippet);
+field('connect-token').addEventListener('input', refreshConnectSnippet);
+field('copy-snippet').addEventListener('click', () => {
+  if (!field('connect-token').value.trim()) { message('connect-status', 'Paste the agent token first.'); return; }
+  const text = field('connect-snippet').textContent;
+  const done = () => message('connect-status', 'Copied.');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => message('connect-status', 'Copy failed — select the text manually.'));
+  } else { message('connect-status', 'Clipboard unavailable — select the text manually.'); }
+});
 showRole(null);
 void checkWorker();
 window.addEventListener('pagehide', () => {
@@ -400,6 +440,7 @@ window.addEventListener('pagehide', () => {
   setStatus('keys-status', 'Sign in to see your keys.', '');
   field('master').value = '';
   field('secret').value = '';
+  field('connect-token').value = '';
   controllers.forEach(controller => controller.abort());
 });
 window.addEventListener('pageshow', () => { pageActive = true; });
