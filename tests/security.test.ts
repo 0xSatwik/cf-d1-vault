@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { encrypt, decrypt, sha256, verifyMaster, base64, redact } from '../src/crypto.js';
 import { authorize } from '../src/auth.js';
 import { safePath } from '../src/github.js';
+import { keySchema } from '../src/admin.js';
 import { type Env, type KeyRow, labelName, normalizeWebsite, website } from '../src/types.js';
 
 test('GCM binds all identity fields, detects tampering, and uses fresh nonces', async () => {
@@ -23,6 +24,16 @@ test('master verifier and redaction', async () => {
   assert.equal(await verifyMaster('synthetic', await sha256('synthetic')), true);
   assert.equal(await verifyMaster('wrong', await sha256('synthetic')), false);
   assert.equal(redact('canary abc ghp_abcdefghijklmnopqrst', ['abc']), 'canary [REDACTED] [REDACTED]');
+});
+test('key delete action parses without website or secret', () => {
+  const ok = keySchema.safeParse({ action: 'delete', service: 'github',
+    label: 'old key', request_id: '11111111-1111-4111-8111-111111111111' });
+  assert.equal(ok.success, true);
+  assert.equal(keySchema.safeParse({ action: 'delete', service: 'github',
+    label: 'old key', website: 'https://api.github.com',
+    request_id: '11111111-1111-4111-8111-111111111111' }).success, false);
+  assert.equal(keySchema.safeParse({ action: 'delete', service: 'github',
+    label: 'old key' }).success, false);
 });
 test('key names may contain spaces, but no leading/trailing/double space', () => {
   assert.equal(labelName.safeParse('GitHub satwik work token').success, true);
