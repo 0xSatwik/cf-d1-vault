@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { requireMaster, subset } from './auth.js';
+import { adminRole, subset } from './auth.js';
 import { auditStatement, finishAudit, prune, reserveAudit } from './audit.js';
 import { encrypt } from './crypto.js';
 import { type AgentRow, type Env, type GrantRow, type KeyRow, identifier, json, now,
@@ -39,7 +39,18 @@ function safeGrant(grant: GrantRow): object {
     revoked_at: grant.revoked_at };
 }
 export async function admin(request: Request, env: Env, path: string): Promise<Response> {
-  await requireMaster(request, env);
+  const role = await adminRole(request, env);
+  if (path === '/whoami') {
+    if (request.method !== 'GET') throw new VaultError('method_not_allowed', 405);
+    return json({ role });
+  }
+  if (role === 'human' && !(path === '/admin/keys' && ['GET', 'POST'].includes(request.method)))
+    throw new VaultError('forbidden', 403);
+  // Check the human action before any database or audit side effects.
+  const raw = request.method === 'POST' ? await body(request) : undefined;
+  if (role === 'human' && request.method === 'POST' &&
+      (typeof raw !== 'object' || raw === null || !('action' in raw) || raw.action !== 'add'))
+    throw new VaultError('forbidden', 403);
   await prune(env);
   if (path === '/admin/keys' && request.method === 'GET') {
     const audit = await reserveAudit(env, { operation: 'admin_keys_list', status: 'reserved', request_id: crypto.randomUUID() });
@@ -48,7 +59,6 @@ export async function admin(request: Request, env: Env, path: string): Promise<R
     return json({ keys: rows.results, limit: 100 });
   }
   if (request.method !== 'POST') throw new VaultError('method_not_allowed', 405);
-  const raw = await body(request);
   if (path === '/unlock') {
     const args = unlockSchema.parse(raw);
     const previous = await env.DB.prepare('SELECT * FROM grants WHERE admin_request_id=?')
