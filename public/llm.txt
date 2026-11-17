@@ -85,9 +85,12 @@ GET /whoami
 Stateless Streamable HTTP. POST only; GET/DELETE return 405; JSON arrays (batches)
 are rejected with 400. maxRequestBodySize 32768. Each request creates a fresh
 server and transport; there is no session state.
+Clients must send Accept: application/json, text/event-stream; without it the
+server answers 406 (correct per the MCP spec). Any spec-compliant client works:
+Claude Code, Cursor, Cline, Codex, Pi, the MCP Inspector, or an SDK client.
 Tool results are JSON text. Tool errors are {"error":"<code>"} with isError true.
 A locked call returns {"error":"unlock_required","service","label",
-"instruction":"Ask Muse to unlock this exact key."} — the agent cannot unlock itself.
+"instruction":"Ask the vault admin to unlock this exact key."} — the agent cannot unlock itself.
 Error responses also carry "kind", the error class name (e.g. "TypeError"), for diagnosis.
 Every tool call re-checks the grant against D1 primary immediately before dispatch,
 and refuses if the key was rotated or disabled since (unlock_required).
@@ -97,20 +100,23 @@ any other upstream failure returns upstream_failed. Upstream bodies are never re
 Tools:
 - github_read_file: {"key_label","repository","path"} plus optional "branch".
   repository is owner/repo (mixed case allowed). branch, when given, and path are exact; without branch the repo default branch is read. File must be UTF-8
-  and <=32768 bytes. Paths under .env, .git, secrets, or ending .pem/.key/.p12/.pfx/.env
-  are refused (sensitive_path). Returns {"repository","path","branch","sha","content"}.
+  and <=32768 bytes. Paths under .env, .git, secrets, or ending .pem/.key/.p12/.pfx/.env/.ppk,
+  or named id_rsa/id_dsa/id_ecdsa/id_ed25519 (plus .pub variants) are refused
+  (sensitive_path). Returns {"repository","path","branch","sha","content"}.
 - github_list_issues: {"key_label","repository","page":1-10,"state":"open"|"closed"|"all"}.
   Returns up to 20 issues {"page","issues":[{"number","title","state"}]}, pull requests excluded.
 - github_create_issue: only when ENABLE_GITHUB_WRITES=true.
   {"key_label","repository","request_id","title","body"}.
   Returns {"number","status":"succeeded"} or {"status":"<stored>","duplicate":true,
-  "instruction":"Never resend with a new ID; Muse must reconcile uncertain writes."}.
-  A write with an uncertain outcome returns write_outcome_unknown_reconcile_with_muse (503).
+  "instruction":"Never resend with a new ID; the vault admin must reconcile uncertain writes."}.
+  A write with an uncertain outcome returns write_outcome_unknown_reconcile_with_admin (503).
 - service_request: {"key_label","service","method":"GET"|"POST"|"PUT"|"PATCH"|"DELETE",
   "path","body"?}. path starts with / and contains no "..". body <=32768 characters.
   The Worker calls the key's stored website + path with the decrypted key as a Bearer
   token and returns {"status","body"} (parsed JSON when possible, else redacted text).
-  The key is never shown to the agent. Use the service and key label from the unlock,
+  Upstream fetch timeout is 25 seconds (the Workers platform caps a request at
+  ~30s wall-clock, so it cannot be raised further); the response text is sliced
+  to 32768 characters. The key is never shown to the agent. Use the service and key label from the unlock,
   and the path said in chat.
 
 ## Static assets (GET, no auth)
