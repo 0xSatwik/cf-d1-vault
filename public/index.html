@@ -29,11 +29,12 @@
   <main>
     <section class="hero" aria-labelledby="hero-title">
       <p class="eyebrow">Open source · Free tier · No keys in Pi</p>
-      <h1 id="hero-title">Your keys.<br><span class="grad">Pi&rsquo;s access. Your rules.</span></h1>
-      <p class="lede">Store GitHub keys encrypted, then unlock one for Pi for two hours — scoped to the exact repos, branches and files you choose. Pi never sees a key.</p>
+      <h1 id="hero-title">Every key.<br><span class="grad">Pi&rsquo;s access. Your rules.</span></h1>
+      <p class="lede">Store keys for GitHub, Cloudflare, OpenRouter and every service you use — encrypted. Unlock one for Pi for two hours. What Pi may do with it, you say in chat. Pi never sees a key.</p>
       <ul class="chips">
+        <li>Every service</li>
         <li>AES-256-GCM encrypted</li>
-        <li>2-hour scoped grants</li>
+        <li>2-hour grants</li>
         <li>Master stays with you</li>
       </ul>
     </section>
@@ -60,19 +61,41 @@
       <p id="auth-status" class="status" role="status"></p>
     </section>
 
+    <datalist id="services-list">
+      <option value="github">GitHub</option>
+      <option value="cloudflare">Cloudflare</option>
+      <option value="openrouter">OpenRouter</option>
+      <option value="openai">OpenAI</option>
+      <option value="anthropic">Anthropic</option>
+      <option value="google">Google AI</option>
+      <option value="composio">Composio</option>
+      <option value="pipedream">Pipedream</option>
+      <option value="e2b">E2B</option>
+      <option value="daytona">Daytona</option>
+      <option value="boat">Boat</option>
+      <option value="slack">Slack</option>
+      <option value="telegram">Telegram</option>
+      <option value="gmail">Gmail</option>
+      <option value="google-calendar">Google Calendar</option>
+      <option value="notion">Notion</option>
+      <option value="linear">Linear</option>
+      <option value="resend">Resend</option>
+      <option value="expo">Expo</option>
+    </datalist>
+
     <div class="columns">
       <section class="card" aria-labelledby="key-title">
         <div class="card-head">
           <span class="icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
           </span>
-          <div><h2 id="key-title">Add a key</h2><p>Add a GitHub key and choose exactly what it can access.</p></div>
+          <div><h2 id="key-title">Add a key</h2><p>Three things only: the service, a name, and the key itself. Any token works — classic, fine-grained, API key.</p></div>
         </div>
         <form id="key-form" autocomplete="off">
-          <div class="grid"><label id="key-action-label">Action<select id="key-action"><option value="add">Add key</option><option value="rotate" data-master-only hidden>Rotate key</option></select></label><label>Key name<input id="key-label" required pattern="[A-Za-z0-9_\-]{1,80}" maxlength="80" placeholder="work"></label></div>
-          <label>GitHub personal access token<input id="secret" type="password" required maxlength="2048" autocomplete="new-password" spellcheck="false" placeholder="ghp_… or github_pat_…"></label>
-          <label id="key-version-label">Encryption version<select id="key-version"><option value="1">1 · VAULT_DEK_V1</option><option value="2">2 · VAULT_DEK_V2</option></select></label><p id="key-version-hint" class="hint">The selected encryption key must be provisioned on the Worker.</p>
-          <div id="key-policy" class="policy"></div>
+          <div class="grid"><label>Service<input id="key-service" list="services-list" required pattern="[A-Za-z0-9_\-]{1,80}" maxlength="80" placeholder="github" autocapitalize="none" spellcheck="false"></label><label>Key name<input id="key-label" required pattern="[A-Za-z0-9_\-]{1,80}" maxlength="80" placeholder="work"></label></div>
+          <label>Website<input id="key-website" type="url" required maxlength="2048" placeholder="https://api.github.com" autocapitalize="none" spellcheck="false"></label>
+          <label>Key value<input id="secret" type="password" required maxlength="2048" autocomplete="new-password" spellcheck="false" placeholder="Paste the token or API key"></label>
+          <input id="key-action" type="hidden" value="add">
           <button type="submit" class="primary">Save key</button><p id="key-status" class="status" role="status"></p>
         </form>
       </section>
@@ -82,12 +105,11 @@
           <span class="icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
           </span>
-          <div><h2 id="unlock-title">Unlock for Pi</h2><p>Let Pi use a key for two hours, within the limits you already set.</p></div>
+          <div><h2 id="unlock-title">Unlock for Pi</h2><p>Let Pi use a key for two hours. Say in chat what Pi may do with it — the repo, the task, the limits.</p></div>
         </div>
         <form id="unlock-form" autocomplete="off">
           <label>Pi agent<input id="agent-id" required pattern="[A-Za-z0-9_\-]{1,80}" maxlength="80" placeholder="pi"></label>
-          <div class="grid"><label>Service<select id="unlock-service"><option value="github">github</option></select></label><label>Key name<input id="unlock-label" required pattern="[A-Za-z0-9_\-]{1,80}" maxlength="80" placeholder="work"></label></div>
-          <div id="unlock-policy" class="policy"></div>
+          <div class="grid"><label>Service<input id="unlock-service" list="services-list" required pattern="[A-Za-z0-9_\-]{1,80}" maxlength="80" placeholder="github" autocapitalize="none" spellcheck="false"></label><label>Key name<input id="unlock-label" required pattern="[A-Za-z0-9_\-]{1,80}" maxlength="80" placeholder="work"></label></div>
           <button type="submit" class="primary">Unlock for two hours</button><p id="unlock-status" class="status" role="status"></p>
         </form>
       </section>
@@ -98,7 +120,7 @@
         <span class="icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7l8.7 5 8.7-5M12 22V12"/></svg>
         </span>
-        <div><h2 id="keys-title">My keys</h2><p>Up to 100 saved keys and their access. Secret values are never shown.</p></div>
+        <div><h2 id="keys-title">My keys</h2><p>Up to 100 saved keys. Secret values are never shown.</p></div>
         <button id="refresh-keys" type="button" class="secondary">Refresh keys</button>
       </div>
       <p id="keys-status" class="status" role="status">Sign in to see your keys.</p>
@@ -119,9 +141,6 @@
   <footer>
     <p>Use a trusted browser · Passwords clear when you leave · <a href="/llms.txt">API docs</a> · <a href="https://github.com/0xSatwik/cf-d1-vault">Source on GitHub</a></p>
   </footer>
-
-  <template id="policy-template"><fieldset><legend>Choose access</legend><p class="hint">Choose at least one permission and a repository. For file access, enter exact branch and file names separated by commas. Leave these blank for issues only. Add up to 20 repositories.</p><div class="tools"><label class="chip"><input type="checkbox" value="github_read_file" checked><span>Read files</span></label><label class="chip"><input type="checkbox" value="github_list_issues" checked><span>View issues</span></label><label class="chip"><input type="checkbox" value="github_create_issue" disabled><span>Create issues</span><span class="write-note">— checking availability</span></label></div><div class="resources"></div><button type="button" class="secondary add-resource">Add repository</button></fieldset></template>
-  <template id="resource-template"><fieldset class="resource"><legend>Repository access</legend><label>Repository · owner/repo in lowercase<input class="repository" required maxlength="201" pattern="[a-z0-9][a-z0-9_.\-]{0,99}\/[a-z0-9][a-z0-9_.\-]{0,99}" placeholder="example/project" autocapitalize="none" spellcheck="false"></label><label>Branches · comma-separated, up to 20<input class="branches" placeholder="main, develop" spellcheck="false"></label><label>Files · comma-separated, up to 100<input class="paths" placeholder="README.md, docs/guide.md" spellcheck="false"></label><button type="button" class="secondary remove-resource">Remove repository</button></fieldset></template>
   <noscript>This page requires the same-origin manual.js script.</noscript>
 </body>
 </html>
