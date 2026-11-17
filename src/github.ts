@@ -2,10 +2,10 @@ import { z } from 'zod';
 import { authorize, type Admission } from './auth.js';
 import { auditStatement, finishAudit, sampledRead } from './audit.js';
 import { decrypt, redact, sha256, unbase64 } from './crypto.js';
-import { type Env, branchName, filePath, identifier, now, readBounded,
+import { type Env, branchName, filePath, identifier, labelName, now, readBounded,
   repoName, requestId, VaultError } from './types.js';
 
-const common = { key_label: identifier, repository: repoName };
+const common = { key_label: labelName, repository: repoName };
 export const readFileSchema = z.object({ ...common, branch: branchName, path: filePath }).strict();
 export const listIssuesSchema = z.object({ ...common, page: z.number().int().min(1).max(10).default(1),
   state: z.enum(['open', 'closed', 'all']).default('open') }).strict();
