@@ -19,7 +19,7 @@ There is no stored repo/branch/path policy. What Pi may do with a key is said **
 Trusted Muse administration environment / human browser
   holds: raw high-entropy master, upstream key during entry
   POST /admin/agents  -> register SHA-256 bearer hash
-  POST /admin/keys    -> add / rotate / disable / delete encrypted key rows
+  POST /admin/keys    -> add / rotate / disable / enable / delete encrypted key rows
   POST /unlock        -> agent + service + key label, 7200 seconds
   POST /revoke        -> grant / agent / key
               | HTTPS Authorization: Bearer <MASTER_SECRET>
@@ -84,8 +84,8 @@ Any other service works too: type its slug and website. Token type does not matt
 
 Open the Worker URL in a browser. One password field, two levels:
 
-- **Human password** (owner-chosen): add keys and view the key list. Nothing else.
-- **Master password** (Muse-held): everything — add, rotate, disable, delete, unlock, revoke, agents.
+- **Human password** (owner-chosen): add, rotate, disable, delete and enable keys, and view the key list. Unlock, revoke and agents stay master-only.
+- **Master password** (Muse-held): everything — add, rotate, disable, enable, delete, unlock, revoke, agents.
 
 Add a key asks for service, key name, website, key value — nothing else. Unlock for Pi asks for agent, service, key name — two hours. The signed-in state is a green banner ("Signed in as Key contributor" / "Signed in as Owner") with a Sign out button; the password form hides while signed in. Wrong password shows red "Password not recognized." Keys list shows service, label, website, status and ID. Secret values are never shown.
 
@@ -165,7 +165,7 @@ npm test          # node tests, no network
    # master: a long random string; store only its SHA-256 on the Worker:
    node -e "console.log(require('crypto').createHash('sha256').update('YOUR_MASTER_HERE').digest('hex'))"
    npx wrangler secret put MASTER_SHA256
-   # optional second password for humans (add keys + list only):
+   # optional second password for humans (key management; unlock/revoke/agents stay master-only):
    npx wrangler secret put HUMAN_SHA256
    ```
    Keep the raw master and the DEK backup offline (chmod 600). The master is Muse-held; the human password is owner-chosen.
