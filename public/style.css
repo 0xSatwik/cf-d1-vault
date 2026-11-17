@@ -196,3 +196,18 @@ footer p { margin: 0; }
   .hero { padding-top: 28px; }
   .signin-state { flex-wrap: wrap; }
 }
+
+.snippet {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .82rem;
+  line-height: 1.55;
+  color: var(--text);
+  background: rgba(0, 0, 0, .35);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin: 4px 0 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+}
