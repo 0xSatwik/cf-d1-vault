@@ -15,7 +15,8 @@ export const createIssueSchema = z.object({ ...common, request_id: requestId,
 export function safePath(path: string): boolean {
   return !path.split('/').some(segment =>
     segment.startsWith('.') || /^(?:secrets?|credentials?)(?:[._-]|$)/i.test(segment) ||
-    /\.(?:pem|key|p12|pfx|env)$/i.test(segment));
+    /^id_(?:rsa|dsa|ecdsa|ed25519)(?:\..*)?$/i.test(segment) ||
+    /\.(?:pem|key|p12|pfx|ppk|env)$/i.test(segment));
 }
 function endpoint(repository: string, suffix: string): URL {
   const [owner, repo] = repository.split('/');
