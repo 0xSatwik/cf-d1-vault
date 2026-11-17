@@ -6,7 +6,7 @@ import { authenticate } from './auth.js';
 import { createIssue, createIssueSchema, listIssues, listIssuesSchema, readFile, readFileSchema } from './github.js';
 import { type Env, json, readBounded, VaultError } from './types.js';
 
-const CSP = "default-src 'none'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'";
+const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'";
 function secure(response: Response): Response {
   const result = new Response(response.body, response);
   result.headers.set('Cache-Control', 'no-store');
@@ -68,11 +68,13 @@ export default {
       if (request.headers.get('Sec-Fetch-Site') === 'cross-site') throw new VaultError('cross_site');
       let response: Response;
       if (url.pathname === '/mcp') response = await mcp(request, env);
-      else if (['/unlock', '/revoke', '/admin/keys', '/admin/agents'].includes(url.pathname))
+      else if (['/whoami', '/unlock', '/revoke', '/admin/keys', '/admin/agents'].includes(url.pathname))
         response = await admin(request, env, url.pathname);
-      else if (request.method === 'GET' && ['/', '/index.html', '/manual', '/manual.js'].includes(url.pathname)) {
+      else if (request.method === 'GET' && ['/', '/index.html', '/manual', '/manual.js', '/style.css', '/llms.txt', '/llm.txt'].includes(url.pathname)) {
         const asset = new URL(url.pathname === '/manual' ? '/' : url.pathname, origin);
         response = await env.ASSETS.fetch(new Request(asset, { method: 'GET' }));
+        response = new Response(response.body, response);
+        response.headers.set('X-Vault-GitHub-Writes', String(env.ENABLE_GITHUB_WRITES === 'true'));
       } else response = json({ error: 'not_found' }, 404);
       return secure(response);
     } catch (error) {
