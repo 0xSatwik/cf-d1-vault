@@ -36,7 +36,7 @@ async function mcp(request: Request, env: Env): Promise<Response> {
           ? { error: 'unlock_required', service: parsed.success && parsed.data.service ? parsed.data.service
               : tool.startsWith('github_') ? 'github' : '',
               label: parsed.success && parsed.data.key_label ? parsed.data.key_label : '',
-              instruction: 'Ask Muse to unlock this exact key.' }
+              instruction: 'Ask the vault admin to unlock this exact key.' }
           : { error: error instanceof VaultError ? error.code : 'operation_failed', kind };
         return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
       }
