@@ -8,6 +8,7 @@ function showRole(next) {
   role = next;
   document.querySelectorAll('[data-master-only]').forEach(node => { node.hidden = next !== 'master'; });
   field('role-badge').textContent = next === 'master' ? 'Owner' : next === 'human' ? 'Key contributor' : 'Not signed in';
+  field('role-badge').className = 'badge ' + (next === 'master' ? 'badge-owner' : next === 'human' ? 'badge-human' : 'badge-off');
   if (next !== 'master') field('key-action').value = 'add';
   field('key-action-label').hidden = next !== 'master';
   field('key-version-label').hidden = next !== 'master';
@@ -192,7 +193,7 @@ async function refreshKeys() {
     const cards = data.keys.map(key => {
       const card = element('article', undefined, 'key-card');
       card.append(element('h3', `${key.service} / ${key.label}`),
-        element('p', key.enabled ? 'Ready to use' : 'Disabled'),
+        element('p', key.enabled ? 'Ready to use' : 'Disabled', key.enabled ? 'status-ready' : 'status-disabled'),
         element('p', `ID: ${key.id}`, 'hint'));
       const policy = JSON.parse(key.policy_json);
       const details = element('details');
