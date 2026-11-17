@@ -28,7 +28,8 @@ export function normalizeWebsite(value: string): string {
 }
 // Validators for API-call parameters Pi mentions in chat (repo, branch, file).
 // These are call arguments, not stored policy: the vault stores no repo/branch/path.
-export const repoName = z.string().regex(/^[a-z0-9][a-z0-9_.-]{0,99}\/[a-z0-9][a-z0-9_.-]{0,99}$/);
+// GitHub owner/repo names are case-insensitive, so uppercase is allowed.
+export const repoName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/);
 export const branchName = z.string().min(1).max(200).refine(s =>
   !/[\s\\%?#\x00-\x1f]/.test(s) && !s.includes('..') && !s.startsWith('/') && !s.endsWith('/'));
 export const filePath = z.string().min(1).max(500).refine(s =>
