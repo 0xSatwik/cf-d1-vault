@@ -1,29 +1,43 @@
 # cf-d1-vault
 
-MIT-licensed TypeScript credential vault and stateless remote MCP gateway for Cloudflare Workers Free + D1. Pi holds a request-only bearer; Muse controls administration and exact two-hour grants. GitHub PATs remain inside the Worker. No deployment is performed by building or testing this repository.
+MIT-licensed TypeScript credential vault and stateless remote MCP gateway for Cloudflare Workers Free + D1. Pi holds a request-only bearer; Muse controls administration and two-hour grants. Keys stay inside the Worker — Pi never sees one.
+
+## What it is
+
+A vault for **every service, not one**. A key is three things only:
+
+- **service** — a short slug: `github`, `cloudflare`, `openrouter`, … or any custom slug
+- **label** — a key name, e.g. `work`
+- **website** — the API base the key belongs to, e.g. `https://api.github.com`
+- **secret** — the value itself: a classic PAT, a fine-grained PAT, any API key
+
+There is no stored repo/branch/path policy. What Pi may do with a key is said **in chat** — "read README.md in 0xsatwik/cf-d1-vault on main" — not stored in the vault. The grant is the boundary: one agent, one service, one key label, two hours. When the window closes, Pi asks Muse to unlock again.
 
 ## How the whole system fits together
 
 ```text
 Trusted Muse administration environment / human browser
-  holds: raw high-entropy master, upstream PAT during entry
-  POST /admin/agents  -> register SHA-256 bearer hash + maximum policy
-  POST /admin/keys    -> add / rotate / disable encrypted PAT rows
-  POST /unlock        -> exact agent + github + label + scope, 7200 seconds
+  holds: raw high-entropy master, upstream key during entry
+  POST /admin/agents  -> register SHA-256 bearer hash
+  POST /admin/keys    -> add / rotate / disable encrypted key rows
+  POST /unlock        -> agent + service + key label, 7200 seconds
   POST /revoke        -> grant / agent / key
               | HTTPS Authorization: Bearer <MASTER_SECRET>
               v
 Cloudflare Worker (trusted code and deployment boundary)
   MASTER_SHA256 secret: verifies Muse; raw master is not persisted
+  HUMAN_SHA256 secret: second password, add-keys + list-keys only
   VAULT_DEK_V1 / V2 secrets: independent AES-256-GCM encryption keys
   /mcp: official SDK, stateless Streamable HTTP, POST JSON responses
-  policy: intersection(agent, grant, key), fresh D1 primary reads
-  GitHub adapter: fixed origin, exact resource checks, bounded results
-       | D1 binding                         | HTTPS Bearer <PAT>
+  grants: agent + service + key label, fresh D1 primary reads, no cache
+  GitHub adapter: fixed origin, exact file/issue calls, bounded results
+  service_request: generic proxy — Worker calls the key's website
+       | D1 binding                         | HTTPS Bearer <key>
        v                                    v
-D1 primary                            api.github.com
-  keys: ciphertext + nonce + AAD identity    file read / issue list
-  agents: token hash + maximum policy       optional issue creation
+D1 primary                            api.github.com, api.cloudflare.com,
+  keys: service + label + website +         openrouter.ai, ... (any website)
+        ciphertext + nonce + AAD identity
+  agents: token hash
   grants: opened_at, expires_at, revoked_at
   audit: metadata only
   write_operations: durable dispatch reservations
@@ -36,473 +50,170 @@ Pi ~/.pi/agent/mcp.json -> HTTPS /mcp
   asks Muse when locked; cannot unlock itself
 ```
 
-The DEK and the master are independent. An unlock authorizes operations; it does not load a transient DEK or start an isolate timer. Worker restarts do not extend grants. No KV, Durable Objects, OAuth server, VM, Pages deployment, paid plan, or local stdio proxy is required. Static Assets serves the manual-entry page from the same Worker.
+The DEK and the master are independent. An unlock authorizes use; it does not load a transient DEK or start an isolate timer. Worker restarts do not extend grants. No KV, Durable Objects, OAuth server, VM, Pages deployment, paid plan, or local stdio proxy is required. Static Assets serves the manual-entry page from the same Worker.
 
-## Requirements and pinned dependencies
+## Services, pre-filled
 
-Use Node.js 22.12 or newer, npm, Python 3, a Cloudflare account on Workers Free, a trusted Muse administration machine, and Pi with remote Streamable HTTP support. `package.json` pins `@modelcontextprotocol/sdk` 1.32.2, Wrangler 4.163.0, Zod 4.6.7, TypeScript 5.9.3, and Workers types 5.20261117.1. The SDK's documented `WebStandardStreamableHTTPServerTransport` uses Fetch Request/Response directly. There is one server and transport per request; no MCP protocol session is used as an authorization grant.
+The frontend's service list is pre-filled from the services named in the [Rakazo](https://github.com/elie222/rakazo) project, plus the ones this vault itself runs on. Each fills in its API website automatically (editable — any website works):
 
-Run all project commands from the checkout:
+| Service | Website |
+| --- | --- |
+| github | https://api.github.com |
+| cloudflare | https://api.cloudflare.com |
+| openrouter | https://openrouter.ai/api/v1 |
+| openai | https://api.openai.com/v1 |
+| anthropic | https://api.anthropic.com |
+| google | https://generativelanguage.googleapis.com/v1beta |
+| composio | https://backend.composio.dev |
+| pipedream | https://api.pipedream.com |
+| e2b | https://api.e2b.dev |
+| daytona | https://app.daytona.io/api |
+| boat | (fill in the website) |
+| slack | https://slack.com/api |
+| telegram | https://api.telegram.org |
+| gmail | https://gmail.googleapis.com/gmail/v1 |
+| google-calendar | https://www.googleapis.com/calendar/v3 |
+| notion | https://api.notion.com |
+| linear | https://api.linear.app |
+| resend | https://api.resend.com |
+| expo | https://exp.host |
 
-```sh
-cd /root/work/cf-vault
-npm install --package-lock=false
-npm run check
-npm test
-npm run build
-```
+Any other service works too: type its slug and website. Token type does not matter — classic PAT, fine-grained PAT, API key, all stored as an opaque value.
 
-`build` runs `wrangler deploy --dry-run`; it does not deploy. Tests use synthetic data and local cryptography. A successful bundle does not establish production CPU headroom or complete deployment acceptance.
+## Manual page
 
-## 1. Provision Cloudflare on the free tier
+Open the Worker URL in a browser. One password field, two levels:
 
-These steps are instructions for the trusted operator. They perform real Cloudflare changes when you choose to run them. Keep deploy credentials outside Pi and outside repositories Pi can modify through tools or CI.
+- **Human password** (owner-chosen): add keys and view the key list. Nothing else.
+- **Master password** (Muse-held): everything — add, rotate, disable, unlock, revoke, agents.
 
-### Login, create D1, and configure bindings
+Add a key asks for service, key name, website, key value — nothing else. Unlock for Pi asks for agent, service, key name — two hours. The signed-in state is a green banner ("Signed in as Key contributor" / "Signed in as Owner") with a Sign out button; the password form hides while signed in. Wrong password shows red "Password not recognized." Keys list shows service, label, website, status and ID. Secret values are never shown.
 
-```sh
-cd /root/work/cf-vault
-npx wrangler login
-npx wrangler whoami
-npx wrangler d1 create cf-vault
-```
+API docs live at `/llms.txt` and `/llm.txt` (identical), linked from the footer.
 
-Copy the returned database UUID. Replace the entire `wrangler.toml` with the following configuration, substituting the database UUID and your actual Worker origin. All angle-bracket values throughout this guide are placeholders to replace before use; none are credentials. Choose the Worker name before generating the origin. Do not use a trailing slash in `PUBLIC_ORIGIN`.
+## API
 
-```toml
-name = "cf-d1-vault"
-main = "src/index.ts"
-compatibility_date = "2026-11-17"
-compatibility_flags = ["nodejs_compat"]
-workers_dev = true
+Base URL: the exact configured `PUBLIC_ORIGIN`, no trailing slash. All responses `Cache-Control: no-store`. No secret retrieval/export endpoint exists. Full reference: `public/llms.txt`.
 
-[assets]
-directory = "./public"
-binding = "ASSETS"
-run_worker_first = true
+Auth: `Authorization: Bearer <credential>` on every authenticated call. Master is checked before human. Missing/invalid credentials return 401; a valid human attempting a master operation gets 403.
 
-[[d1_databases]]
-binding = "DB"
-database_name = "cf-vault"
-database_id = "<D1_DATABASE_UUID>"
-migrations_dir = "migrations"
+- `GET /whoami` → `{"role":"master"|"human"}`
+- `GET /admin/keys` → `{"keys":[{"id","service","label","website","enc_version","enabled"}],"limit":100}`
+- `POST /admin/keys` — `{"action":"add"|"rotate"|"disable","service","label","website","secret","request_id"}`. `disable` takes only service, label, request_id. Rotate and disable revoke all live grants for the key. A label must be unique per service. `secret` is 1–2048 printable ASCII, no spaces. `website` must start with `https://`.
+- `POST /admin/agents` (master) — `{"id","token_hash","request_id"}`. `token_hash` is the lowercase hex SHA-256 of the agent's request-only bearer. The raw bearer is never stored.
+- `POST /unlock` (master) — `{"agent_id","service","key_label","request_id"}` → a grant `{"id","agent_id","key_id","service","opened_at","expires_at","revoked_at"}` with `expires_at = opened_at + 7200`. Replaying the same `request_id` returns the original grant, never a fresh one. The key must exist and be enabled; the agent must exist and not be revoked.
+- `POST /revoke` (master) — `{"target":"grant"|"agent"|"key","id","request_id"}`. Revoking an agent revokes its grants; disabling a key revokes its grants.
+- `POST /mcp` — agent bearer only. Stateless Streamable HTTP, POST only (GET/DELETE return 405, batches rejected).
 
-[vars]
-PUBLIC_ORIGIN = "https://cf-d1-vault.<YOUR_WORKERS_SUBDOMAIN>.workers.dev"
-ENABLE_GITHUB_WRITES = "false"
+All POST admin bodies: `Content-Type: application/json`, ≤32768 bytes, strict JSON objects (no extra properties). `request_id` must be a UUID. Errors: `{"error":"<fixed_code>"}` with 400/401/403/404/405/409/413/415/503. No caught exception, upstream body, or credential is ever exposed. An untrusted host, mismatched `Origin`, or `Sec-Fetch-Site: cross-site` is refused. No CORS. Curl may omit Origin. Identifiers: 1–80 ASCII letters, digits, underscore or hyphen.
 
-[observability]
-enabled = false
-```
+## MCP tools (Pi)
 
-The Worker rejects a request whose URL origin differs from `PUBLIC_ORIGIN`, and rejects browser requests carrying a different Origin. Use the exact deployed origin, including a custom domain if configured. A trusted non-browser client may omit Origin. No cross-origin CORS permission is granted.
-
-Apply the migration to the remote database, and inspect only table names:
-
-```sh
-cd /root/work/cf-vault
-npx wrangler d1 migrations apply DB --remote
-npx wrangler d1 execute DB --remote --command "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
-```
-
-### Generate and retain independent secrets
-
-In Muse's trusted password manager, generate and save three independent values:
-
-1. Master: at least 32 cryptographically random bytes, encoded as base64url or hex. Muse alone retains the raw value.
-2. DEK: exactly 32 cryptographically random bytes, standard base64 encoded. Retain a recovery copy separately from database backups.
-3. Pi request bearer: at least 32 cryptographically random bytes, base64url encoded. Give only this bearer to Pi.
-
-Do not paste generated values into chats, source files, shell command lines, or this README. The helper accepts secrets through hidden interactive prompts. This command prompts for the retained master and DEK, hashes the master locally, and sends only the verifier and DEK to Wrangler through stdin:
-
-```sh
-cd /root/work/cf-vault
-python3 scripts/admin.py provision
-```
-
-The helper uses `wrangler secret put MASTER_SHA256` and `wrangler secret put VAULT_DEK_V1`. Wrangler's `secret put` creates/deploys a Worker version; it is an actual remote administration operation. Follow its first-Worker creation prompt if necessary. Neither secret is a `[vars]` value. The raw master is never stored in D1 or a Worker binding. SHA-256 is appropriate here for a high-entropy random secret, not a human password.
-
-Deploy the final bundle:
-
-```sh
-cd /root/work/cf-vault
-npm run check
-npm test
-npm run build
-npx wrangler deploy
-```
-
-Verify the origin and authentication rejection without sending any credential:
-
-```sh
-python3 - <<'PY'
-import urllib.error
-import urllib.request
-origin = input('Exact HTTPS Worker origin: ').rstrip('/')
-with urllib.request.urlopen(origin + '/') as response:
-    assert response.headers.get('Cache-Control') == 'no-store'
-    assert "default-src 'none'" in response.headers.get('Content-Security-Policy', '')
-    print('Manual entry page:', response.status)
-request = urllib.request.Request(origin + '/mcp', data=b'{}', headers={'Content-Type': 'application/json'})
-try:
-    urllib.request.urlopen(request)
-except urllib.error.HTTPError as error:
-    assert error.code == 401, error.code
-    print('Unauthenticated MCP correctly refused:', error.code)
-PY
-```
-
-## 2. Define exact policies and register Pi
-
-All three policies use the same JSON format. Repository names are lowercase canonical `owner/repo`. Tools, repositories, branches and paths are exact strings; there are no globs, implicit defaults, or URL permissions. Empty branch/path lists allow no file reads, but can be used for issue-only policies. `github_list_issues` and `github_create_issue` check repository and operation; branch/path fields are irrelevant to issue operations.
-
-Create a complete example policy; replace `example/project`, branches and paths with the intended resources before registration:
-
-```sh
-cd /root/work/cf-vault
-python3 - <<'PY'
-import json
-from pathlib import Path
-policy = {
-    'allowed_tools': ['github_read_file', 'github_list_issues'],
-    'resources': [{'repository': 'example/project', 'branches': ['main'], 'paths': ['README.md']}]
-}
-Path('policy.json').write_text(json.dumps(policy, indent=2) + '\n', encoding='utf-8')
-PY
-```
-
-Policy files contain metadata, not secrets. You may use different files for the agent maximum, key maximum and narrower grant. Register the agent on Muse's machine; enter the saved request bearer and master at the hidden prompts:
-
-```sh
-cd /root/work/cf-vault
-python3 scripts/admin.py agent --url https://vault.example.workers.dev --agent pi-main --policy policy.json --request-id 11111111-1111-4111-8111-111111111111
-```
-
-Replace the example origin with your actual origin in every helper command. `POST /admin/agents` stores only `SHA256(bearer)` and the policy. Agent creation is immutable: to rotate a bearer, revoke the old agent and register a new agent ID with a new random bearer. Never reactivate a revoked identity.
-
-## 3. Put keys into the vault
-
-### Muse administration path
-
-Create a classic or fine-grained GitHub PAT in the trusted GitHub account. Both types work equally. Select only the needed upstream repositories and permissions where GitHub permits it: Contents read for file reads, Issues read for listing, Issues write only if deliberately enabling creation. GitHub organization approval/SSO rules still apply. The Worker cannot enlarge the PAT's actual GitHub permissions.
-
-Add a labeled key from Muse's machine:
-
-```sh
-cd /root/work/cf-vault
-python3 scripts/admin.py add --url https://vault.example.workers.dev --label work --policy policy.json --request-id 22222222-2222-4222-8222-222222222222
-python3 scripts/admin.py list --url https://vault.example.workers.dev
-```
-
-The helper prompts for the PAT and master, sends `POST /admin/keys`, and prints metadata only. Encryption happens immediately inside the Worker: AES-256-GCM, fresh 96-bit nonce, 128-bit tag appended to ciphertext, AAD containing immutable ID/service/label/encryption version. D1 stores ciphertext, nonce, version and policy. `GET /admin/keys` returns no ciphertext, nonce or plaintext, just up to 100 metadata entries.
-
-A second label such as `personal` must be added and unlocked independently. The exact `service,label` pair is unique. An add cannot overwrite it.
-
-### Manual entry page
-
-Open the exact Worker origin `/` or `/manual` in a trusted browser. Enter your password and sign in. The role badge identifies owner (master) or key contributor (human) access. Use **Add a key** and its permission checkboxes and repository rows; no policy JSON is needed. **My keys** shows metadata and readable access details. The master also sees Rotate/Disable, **Unlock for Pi** and **Revoke**. Rotation fills the form with the existing policy and requires a replacement PAT.
-
-The single password field sends its value as the Bearer credential for every admin call. The page checks `GET /whoami` on sign-in. Passwords remain only in page memory; the upstream PAT clears on submission, and both password fields clear on `pagehide`. No browser storage, authentication cookies, analytics, inline code or third-party scripts are used. The CSP allows same-origin external scripts, styles and connections only, with all other sources locked down. All responses carry `Cache-Control: no-store`.
-
-### Two administration passwords
-
-- **Master**: verified against `MASTER_SHA256`; full administration, including rotation, disabling keys, agent registration, unlocking and revoking.
-- **Human password**: chosen by the owner and verified against the optional `HUMAN_SHA256` Worker secret. It permits only key metadata listing and adding new keys, plus role discovery through `/whoami`. Every other admin action returns 403. It cannot overwrite an existing label.
-
-Muse provisions `HUMAN_SHA256` as the lowercase hex SHA-256 digest of the owner’s password using the trusted Cloudflare secret workflow. The raw human password is never committed, written to configuration, or sent to Pi. No password value is supplied by this repository. Keep the two credentials distinct; master verification takes precedence. If `HUMAN_SHA256` is absent, human access is disabled. Choose a strong, unique password: a bare SHA-256 verifier provides no password-hardening against offline guessing if exposed. Browser extensions and a compromised browser remain within the trusted administration boundary.
-
-The page shell is public; authentication protects system metadata and mutations. A sign-in does not grant access beyond the server-enforced role.
-
-### Rotate or disable a PAT
-
-Use a new UUID for every distinct operation. Rotation preserves immutable key ID/service/label, encrypts the supplied replacement PAT with a fresh nonce, sets its policy and revokes every existing grant for that key. Disabling also revokes grants.
-
-```sh
-cd /root/work/cf-vault
-python3 scripts/admin.py rotate --url https://vault.example.workers.dev --label work --policy policy.json --request-id 33333333-3333-4333-8333-333333333333
-```
-
-```sh
-cd /root/work/cf-vault
-python3 scripts/admin.py disable --url https://vault.example.workers.dev --label work --request-id 44444444-4444-4444-8444-444444444444
-```
-
-A failed GitHub request never selects another label or token. Rotate the upstream PAT in GitHub too when it may have been exposed.
-
-## 4. Connect Pi to remote MCP
-
-On the Pi host, create `~/.pi/agent/mcp.json` with this complete JSON, substituting the Worker URL and request-only bearer. If an MCP configuration already exists, merge this `vault` entry into its `mcpServers` object rather than overwriting other servers.
+Pi's `mcp.json` needs only the Worker URL and its request-only bearer:
 
 ```json
 {
   "mcpServers": {
     "vault": {
-      "url": "https://vault.example.workers.dev/mcp",
-      "headers": {
-        "Authorization": "Bearer <REQUEST_ONLY_TOKEN>"
-      },
-      "exposure": "codemode",
-      "description": "Scoped GitHub tools; ask Muse to unlock when a grant expires"
+      "type": "streamable-http",
+      "url": "https://<your-worker>.workers.dev/mcp",
+      "headers": { "Authorization": "Bearer <pi-request-token>" }
     }
   }
 }
 ```
 
-This is also supplied as `pi/mcp.json.example`. Pi receives neither PAT, raw master nor DEK. Protect the populated file:
+Tools:
 
-```sh
-mkdir -p "$HOME/.pi/agent"
-chmod 700 "$HOME/.pi/agent"
-chmod 600 "$HOME/.pi/agent/mcp.json"
+- **`github_read_file`** — read one exact UTF-8 file (≤32 KiB) from a repo: `{key_label, repository, branch, path}`. Paths under `.env`, `.git`, `secrets`, or ending `.pem`/`.key`/`.env` are refused. Repository, branch and path come from chat.
+- **`github_list_issues`** — list up to 20 issues: `{key_label, repository, page, state}`.
+- **`github_create_issue`** — only registered when `ENABLE_GITHUB_WRITES=true`: `{key_label, repository, request_id, title, body}`. Durable request UUID; an uncertain write is never retried with a new UUID — Muse reconciles it.
+- **`service_request`** — call any stored service: `{key_label, service, method, path, body?}`. The Worker calls the key's stored website with the decrypted key and returns the redacted response. The key is never shown to Pi.
+
+Every tool call re-checks the grant against D1 primary immediately before dispatch, and refuses if the key was rotated or disabled since. A locked call returns `{error:"unlock_required", service, label, instruction:"Ask Muse to unlock this exact key."}`. Pi cannot unlock itself.
+
+## Security model
+
+- **Keys are AES-256-GCM encrypted in D1.** The AAD binds each ciphertext to `['cf-vault', key id, service, label, enc_version]` — a ciphertext copied to another key, service, or label does not decrypt. Nonces are fresh per encryption. The DEK (`VAULT_DEK_V1`, optional `VAULT_DEK_V2`) lives only as a Worker secret; the raw master lives only with Muse. The Worker stores only `MASTER_SHA256` / `HUMAN_SHA256` verifiers.
+- **No key ever leaves the Worker.** Tool results are redacted: `ghp_`/`github_pat_` token patterns are masked before short secrets, longest secret first, so a short secret inside a longer token cannot split it and leak the rest.
+- **Grants are the only authorization.** A grant names one agent, one service, one key label, and expires exactly 7200 seconds after opening. Expiry is checked on every operation against D1 primary — no positive auth cache. Rotation/disable/revoke kills live grants immediately (checked again before each dispatch).
+- **Writes are safe.** Issue creation (the only write tool) is off unless `ENABLE_GITHUB_WRITES=true`, and uses a durable reservation: same request UUID + same fingerprint returns the stored outcome; a different fingerprint conflicts; an uncertain outcome is never silently retried.
+- **Audit is metadata only.** Unlock/revoke/admin and sampled reads are logged (IDs, operation, status, request ID) — never bodies, keys, or upstream responses. Audit is capped (10,000 rows, 1,000/day) and pruned to 7 days.
+- **Admin idempotency.** Every admin mutation carries a UUID `request_id`, recorded in `admin_requests`. Reuse returns 409. Unlock replays return the original grant.
+
+## Setup
+
+Prerequisites: a Cloudflare account (free tier), Node 20+, `wrangler`.
+
+```bash
+npm install
+npm run check     # tsc --noEmit
+npm test          # node tests, no network
 ```
 
-Restart Pi to load the configuration and inspect the `vault` server through `/mcp`. Tool exposure is `codemode`; use Pi's documented MCP tool discovery/codemode interface to invoke the discovered tools. The installed Pi 1.5.2 documentation explicitly rejects the legacy `sse` transport. A URL selects remote Streamable HTTP. Do not add invented `transport`, `lifecycle` or `auth` fields, point to `/sse`, or start a legacy stdio proxy.
+1. Create the D1 database and apply migrations:
+   ```bash
+   npx wrangler d1 create cf-vault
+   # put the returned database_id in wrangler.toml
+   npx wrangler d1 migrations apply cf-vault --remote
+   ```
+2. Set secrets (never commit them):
+   ```bash
+   # 32 random bytes, base64:
+   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+   npx wrangler secret put VAULT_DEK_V1
+   # master: a long random string; store only its SHA-256 on the Worker:
+   node -e "console.log(require('crypto').createHash('sha256').update('YOUR_MASTER_HERE').digest('hex'))"
+   npx wrangler secret put MASTER_SHA256
+   # optional second password for humans (add keys + list only):
+   npx wrangler secret put HUMAN_SHA256
+   ```
+   Keep the raw master and the DEK backup offline (chmod 600). The master is Muse-held; the human password is owner-chosen.
+3. Set `PUBLIC_ORIGIN` in `wrangler.toml` to the real `https://<name>.<subdomain>.workers.dev` origin, and `ENABLE_GITHUB_WRITES` to `true` only if Pi may create issues.
+4. Deploy: `npx wrangler deploy`.
+5. Register the agent and the first key:
+   ```bash
+   # agent token: a long random string; store its SHA-256:
+   node -e "console.log(require('crypto').createHash('sha256').update('PI_REQUEST_TOKEN').digest('hex'))"
+   curl -X POST $ORIGIN/admin/agents -H "Authorization: Bearer $MASTER" \
+     -H 'Content-Type: application/json' \
+     -d '{"id":"pi","token_hash":"<sha256>","request_id":"<uuid>"}'
+   ```
+   Add the first key on the manual page (human password) or via `/admin/keys`.
+6. Point Pi at the Worker (`~/.pi/agent/mcp.json`, see above) and unlock:
+   ```bash
+   curl -X POST $ORIGIN/unlock -H "Authorization: Bearer $MASTER" \
+     -H 'Content-Type: application/json' \
+     -d '{"agent_id":"pi","service":"github","key_label":"work","request_id":"<uuid>"}'
+   ```
 
-The Worker authenticates each HTTP request before the official SDK handles initialization, protocol negotiation, notifications, `tools/list` and `tools/call`. POST requests advertise `Accept: application/json, text/event-stream` as required by Streamable HTTP; this implementation selects JSON responses. This is still Streamable HTTP even though responses are JSON. It does not provide a standalone SSE listener, resumable session, or `Mcp-Session-Id`; GET and DELETE `/mcp` return 405. JSON-RPC batches are rejected. Pi's bearer authenticates discovery but tool execution requires a separate live grant.
+## Free-tier notes
 
-An MCP tool-call argument example for `github_read_file` is complete JSON:
+Workers Free: 100k requests/day, 10 ms CPU per request. D1 Free: 5M rows read/day, 100k rows written/day. The design stays inside both: stateless MCP (no session storage), D1 primary reads, sampled read-audit (~5%), bounded lists (100 keys, 20 issues), bounded bodies (32 KiB admin, 128 KiB upstream). No KV, Durable Objects, or paid add-ons.
 
-```json
-{
-  "key_label": "work",
-  "repository": "example/project",
-  "branch": "main",
-  "path": "README.md"
-}
+## Lessons baked in
+
+- **Workers fetch rejects `redirect: 'error'`.** Only `'follow'` or `'manual'` are valid at the edge. This vault uses `redirect: 'manual'` and treats any non-2xx response (including 3xx) as an upstream failure. The original v1 GitHub tools carried `redirect: 'error'` and could never complete a real upstream call — the bug only surfaced once grants were tested end to end with real keys.
+- **Deploy propagation is not instant.** For a few seconds after deploy, edge nodes can serve the previous version. A surprising result right after a deploy is worth one retry before debugging.
+- **The locked path is not the whole test.** A locked call returning `unlock_required` proves authorization; only a granted call against a real upstream proves the full chain (decrypt → fetch → response). Test both.
+
+## Repository layout
+
+```text
+src/index.ts     Worker entry: origin checks, /mcp, /admin/*, static assets
+src/admin.ts     whoami / unlock / revoke / admin/keys / admin/agents
+src/auth.ts      bearer auth, admin roles, grant authorization
+src/github.ts    GitHub tools (read file, list issues, create issue)
+src/service.ts   generic service_request proxy
+src/crypto.ts    AES-256-GCM encrypt/decrypt, SHA-256, redaction
+src/audit.ts     audit log, sampling, pruning
+src/types.ts     Env, zod validators, shared helpers
+migrations/      0001_init.sql, 0002_multi_service.sql
+tests/           security.test.ts (GCM binding, redaction, website, grants)
+public/          index.html, manual.js, style.css, llms.txt, llm.txt
+wrangler.toml    Worker + D1 + assets config (no secrets in repo)
 ```
 
-## 5. Unlock, expiry, asking Muse and revocation
+## License
 
-1. Pi tries a narrow tool with an explicit label. Without a matching live grant it receives an MCP `isError: true` result with `unlock_required`, service `github`, label `work`, and the instruction to ask Muse. It receives no PAT or master challenge.
-2. Pi asks Muse for the exact service, label, operations and resources needed for the task. Muse reviews trusted task context and chooses the scope itself.
-3. Muse sends the following command from its trusted environment. The helper sends `POST /unlock` using the raw master only in the HTTPS Authorization header.
-
-```sh
-cd /root/work/cf-vault
-python3 scripts/admin.py unlock --url https://vault.example.workers.dev --agent pi-main --label work --policy policy.json --request-id 55555555-5555-4555-8555-555555555555
-```
-
-The complete request body generated for the example policy is:
-
-```json
-{
-  "agent_id": "pi-main",
-  "service": "github",
-  "key_label": "work",
-  "allowed_tools": ["github_read_file", "github_list_issues"],
-  "resources": [
-    {"repository": "example/project", "branches": ["main"], "paths": ["README.md"]}
-  ],
-  "request_id": "55555555-5555-4555-8555-555555555555"
-}
-```
-
-4. The Worker verifies SHA-256 of the master, resolves the exact enabled key and unrevoked agent, checks the requested scope is a subset of both policies, and atomically inserts a mandatory audit event and grant. It sets `opened_at` from server Unix seconds and `expires_at = opened_at + 7200`. The response contains the grant ID, policy and absolute deadline; save the grant ID for revocation.
-5. Pi retries the original tool using its existing request-only bearer. On every operation and again immediately before dispatch, the Worker reads the D1 primary and requires an enabled key, unrevoked agent, unrevoked matching grant, and `expires_at > server_now`. There is no positive authorization cache or replica read.
-6. At exactly the deadline the grant fails. Pi's existing bearer cannot renew it; activity, MCP initialization and Worker restarts cannot extend it. Pi asks Muse again. A new explicit approval uses a new UUID and creates a new two-hour grant.
-
-Replaying the same unlock request UUID returns the original grant without extending it, including if it is expired or revoked. Reusing it for different arguments returns a conflict. A two-hour grant is not an MCP transport session or a promise to keep a TCP connection open.
-
-Revoke a specific grant by replacing the example ID with the ID returned by unlock:
-
-```sh
-cd /root/work/cf-vault
-python3 scripts/admin.py revoke --url https://vault.example.workers.dev --target grant --id 66666666-6666-4666-8666-666666666666 --request-id 77777777-7777-4777-8777-777777777777
-```
-
-Revoke Pi's entire identity and all its grants:
-
-```sh
-cd /root/work/cf-vault
-python3 scripts/admin.py revoke --url https://vault.example.workers.dev --target agent --id pi-main --request-id 88888888-8888-4888-8888-888888888888
-```
-
-`--target key --id <KEY_ID>` disables one exact key and revokes its grants. Metadata listing supplies key IDs. Revoke prevents subsequent admissions; it cannot retract an upstream request already transmitted, and a small race exists between the final D1 read and dispatch. Keep tools short and bounded. Another already-live grant can independently authorize the same scope; revoke the agent or key to remove all such grants.
-
-## 6. How GitHub calls flow
-
-For `github_read_file`, Pi provides label/repository/branch/path. The Worker maps the tool to service `github`, canonicalizes through strict schemas, rejects sensitive or ambiguous paths, and intersects agent, key and grant policies. It decrypts only that key row per call, constructs a GitHub Contents API URL at `https://api.github.com`, performs another fresh authorization read and attaches the PAT inside the Worker. Redirects are errors. No user URL, arbitrary headers, raw REST/GraphQL passthrough or arbitrary download tool exists.
-
-The adapter sends `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`, and a fixed User-Agent. A file must be UTF-8 and at most 32 KiB; metadata JSON is limited to 64 KiB. Hidden path segments, secret/credential filenames and common key extensions are blocked even when policy permits them. Matching is exact and encoded once; encoded traversal, `..`, backslashes and query delimiters are rejected.
-
-`github_list_issues` accepts a label, exact repository, state and page. It asks for 20 entries, allows pages 1–10, excludes pull requests and returns only number, title and state. Response JSON is limited to 128 KiB. Every page is independently authorized. No issue body, Actions logs/artifacts or redirect URLs are exposed.
-
-Selected result strings are scrubbed for the active PAT, configured encryption secrets, master verifier and recognizable GitHub token formats. Repository content can contain arbitrary unrelated secrets or prompt injection; scrubbing cannot guarantee their removal. Keep allowed paths narrow. Treat tool results as untrusted data.
-
-A GitHub refusal, expired PAT, missing permission or unavailable `work` key is an error; `personal` is never tried. PATs belonging to one GitHub user generally share the 5,000/hour primary authenticated REST limit; secondary limits also apply. The adapter does not automatically retry. It uses bounded Retry-After guidance when returned and otherwise reports refusal; operators should observe GitHub rate-limit policy before retrying reads. Timeouts are bounded to 15 seconds.
-
-### Deliberately enable issue creation
-
-Writes are off by default and absent from tool discovery. To enable the single supported write, set `ENABLE_GITHUB_WRITES = "true"`, deliberately include `github_create_issue` in the agent, key and grant policies, provision an appropriately scoped PAT and deploy the reviewed change. Restart/reconnect Pi to refresh discovery. Existing agent policies are immutable, so register a new identity if its maximum policy must change. Key rotation changes key policy and revokes its grants.
-
-A complete write policy is:
-
-```json
-{
-  "allowed_tools": ["github_list_issues", "github_create_issue"],
-  "resources": [
-    {"repository": "example/project", "branches": [], "paths": []}
-  ]
-}
-```
-
-A complete `github_create_issue` argument object is:
-
-```json
-{
-  "key_label": "work",
-  "repository": "example/project",
-  "request_id": "99999999-9999-4999-8999-999999999999",
-  "title": "Example reviewed task",
-  "body": "This example must be approved for the intended repository before execution."
-}
-```
-
-The Worker atomically reserves a mandatory audit row and durable `(agent_id,request_id)` idempotency record before dispatch. The fingerprint hashes the exact arguments and key ID; raw bodies are not stored. A repeated identical request reports the existing status and never redispatches. A conflicting payload with the same ID is refused. A crash, timeout or result-log failure can leave `reserved`/`unknown` even if GitHub created the issue. Muse must reconcile against GitHub; Pi must never invent a new UUID to retry an uncertain write. There is no distributed transaction between D1 and GitHub. No credential creation, permission changes, workflow edits, deployments, commits or arbitrary write endpoint is exposed.
-
-## API reference
-
-Every admin route requires a Bearer credential. The master has full access; the human password may only list keys, add new keys and call `/whoami`. Pi's request bearer is insufficient. POST bodies must be JSON, at most 32 KiB, with a UUID `request_id`. All schemas reject extra fields.
-
-| Route | Method | Body / result |
-| --- | --- | --- |
-| `/whoami` | GET | Master or human; `{role: "master" | "human"}` |
-| `/mcp` | POST | Official MCP protocol; request-only bearer |
-| `/unlock` | POST | `agent_id,service,key_label,allowed_tools,resources,request_id`; grant metadata |
-| `/revoke` | POST | `target: grant/agent/key,id,request_id`; status |
-| `/admin/agents` | POST | `id,token_hash,policy,request_id`; creates immutable identity |
-| `/admin/keys` | GET | No body; metadata list, limit 100 |
-| `/admin/keys` | POST | `action: add/rotate,service,label,secret,policy,enc_version,request_id` |
-| `/admin/keys` | POST | `action: disable,service,label,request_id` |
-| `/` or `/manual` | GET | Same-origin manual entry page |
-
-Only `github` is implemented. No decrypt/export endpoint exists. A future service needs its own reviewed adapter, schemas and policy mapping. Error responses are fixed codes; caught exception objects, upstream error bodies, headers, credentials and raw arguments are never serialized.
-
-
-The complete machine-readable API reference is served at [`/llms.txt`](public/llms.txt), with an identical `/llm.txt` alias. It documents every endpoint, authentication role, request/response shape, MCP initialization and tool calls, and curl examples. Both files are uploaded by the existing Wrangler `[assets] directory = "./public"` configuration and explicitly allowed by the Worker router.
-
-### Curl examples
-
-Run in Bash with Python 3. Set `$VAULT_URL` to the exact Worker origin (no trailing slash) and `$MASTER` in a trusted shell. Replace example metadata before use. The human password can replace `$MASTER` only for add-key and list-keys. Each command generates a new request UUID; inspect metadata before repeating a mutation whose result is uncertain. Unlock retries should reuse the same UUID and arguments.
-
-**Add key**
-
-```sh
-# Reads the PAT without echo; requires bash and Python 3.
-read -r -s -p 'GitHub PAT: ' VAULT_PAT; printf '\n'
-export VAULT_PAT
-python3 - <<'PY' | curl --fail-with-body -sS "$VAULT_URL/admin/keys" \
-  -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' --data-binary @-
-import json, os, uuid
-print(json.dumps({"action":"add","service":"github","label":"work",
-  "secret":os.environ["VAULT_PAT"],"enc_version":1,
-  "policy":{"allowed_tools":["github_read_file","github_list_issues"],
-    "resources":[{"repository":"example/project","branches":["main"],"paths":["README.md"]}]},
-  "request_id":str(uuid.uuid4())}))
-PY
-unset VAULT_PAT
-```
-
-**List keys**
-
-```sh
-curl --fail-with-body -sS "$VAULT_URL/admin/keys" \
-  -H "Authorization: Bearer $MASTER"
-```
-
-**Unlock**
-
-```sh
-python3 - <<'PY' | curl --fail-with-body -sS "$VAULT_URL/unlock" \
-  -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' --data-binary @-
-import json, uuid
-print(json.dumps({"agent_id":"pi-main","service":"github","key_label":"work",
-  "allowed_tools":["github_read_file","github_list_issues"],
-  "resources":[{"repository":"example/project","branches":["main"],"paths":["README.md"]}],
-  "request_id":str(uuid.uuid4())}))
-PY
-```
-
-**Revoke**
-
-```sh
-python3 - <<'PY' | curl --fail-with-body -sS "$VAULT_URL/revoke" \
-  -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' --data-binary @-
-import json, uuid
-print(json.dumps({"target":"grant","id":"REPLACE_WITH_GRANT_ID","request_id":str(uuid.uuid4())}))
-PY
-```
-
-**Disable key**
-
-```sh
-python3 - <<'PY' | curl --fail-with-body -sS "$VAULT_URL/admin/keys" \
-  -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' --data-binary @-
-import json, uuid
-print(json.dumps({"action":"disable","service":"github","label":"work","request_id":str(uuid.uuid4())}))
-PY
-```
-
-## Local development and verification
-
-Keep `PUBLIC_ORIGIN` set to `http://localhost:8787` for the supplied local config. `.dev.vars.example` documents the secret names; do not use its literal placeholder values as functional secrets. Use only synthetic local values. Never copy production secrets to the Pi development host. Apply the local migration and start the local Worker:
-
-```sh
-cd /root/work/cf-vault
-npm run db:local
-npm run dev
-```
-
-Wrangler reads an ignored `.dev.vars` when local secrets are needed. Local D1 state is under ignored `.wrangler/`. `npm test` covers GCM tampering/AAD/version rotation, nonce freshness, verifier handling, exact policies, sensitive paths and fail-closed authorization. `npm run check` enforces strict TypeScript; `npm run build` verifies the Worker bundle without deployment.
-
-Before accepting a live deployment, use a synthetic/canary GitHub credential in a disposable repository to check initialization, notifications, listing and calls from installed Pi, admin rejection with Pi's bearer, service/label/agent substitution, exact expiry, revoke from a second connection and after redeploy, rotation, redirects/path bypasses, duplicate writes, D1 quota/audit failures, and credential leakage in results/logs. Run write acceptance only with explicit operator intent. Measure worst-case deployed CPU with SDK, crypto and largest allowed responses together; local wall-clock timing does not prove Free CPU compliance. This repository's local verification is not a production security audit.
-
-## Free-tier budget, auditing and capacity
-
-Official limits checked for this implementation: Workers Free has 100,000 requests/day, 10 ms CPU/request, 128 MB memory and 50 external subrequests/request. D1 Free has 5 million rows read/day, 100,000 rows written/day, 10 databases, 500 MB/database, 5 GB/account and 50 queries per invocation. Quotas are account-shared. Network wait is separate from CPU. D1 charges/counts rows scanned and index writes, not just SQL calls. Daily quotas reset at 00:00 UTC. Quota exhaustion refuses service; it never weakens checks or automatically upgrades the account.
-
-Audit rows contain only timestamps, agent/key/grant IDs, operation, status and request ID. Successful admin changes and unlock/revoke are audited atomically with their D1 mutations; metadata listing reserves an audit first. Writes reserve before dispatch. Successful reads are sampled at approximately 5%. Failed authentication/invalid inputs are not persisted, limiting unauthenticated write amplification. No per-call last-used update, body logging or payload tracing is used.
-
-Audit triggers cap insertion at 1,000 rows per UTC day and 10,000 total. Authenticated admin requests prune at most 100 audit rows older than seven days. Thus seven days is the eligible retention window; idle data may remain until the next admin maintenance request. Mandatory audit capacity exhaustion fails closed. Sampled read auditing is best-effort; authorization remains mandatory.
-
-Write idempotency and admin request tombstones are capped at 10,000 each. Grants stop accepting new rows at 10,000. These records are intentionally not automatically removed: deleting request IDs makes old requests replayable. At capacity, pause new operations and plan explicit trusted archival/migration and an identity/request namespace rollover. Grant-cap counting is an application admission limit, not a transactional global counter under simultaneous unlocks. Audit/idempotency caps are database-enforced. Avoid busy loops, inspect D1 row metrics and keep this a small personal vault. An unauthenticated attacker can still exhaust Worker request quota.
-
-## Recovery, rotation and security boundaries
-
-To rotate the DEK, retain V1, create an independent V2 in the trusted password manager, and install it through the hidden Wrangler prompt:
-
-```sh
-cd /root/work/cf-vault
-npx wrangler secret put VAULT_DEK_V2
-```
-
-Re-submit each PAT through `rotate --version 2` using new request IDs; this re-encrypts with fresh nonces and revokes old grants. Listing shows `enc_version`. Verify every row is on V2 and retain V1 for backups/Time Travel through the recovery window. Only then remove it:
-
-```sh
-cd /root/work/cf-vault
-npx wrangler secret delete VAULT_DEK_V1
-```
-
-The V1 binding is optional in practice after every row moves to V2; code never decrypts V2 through V1. Do not delete an old DEK while any required backup still needs it. There is no key-export route or automatic bulk decrypt/re-encrypt route. Re-entering PATs through trusted administration is the supported migration procedure.
-
-D1 Free Time Travel currently retains seven days. Restore only under maintenance: prevent Pi access, restore the database, revoke all restored grants and agents, rotate request bearers, and re-register identities before reopening. Restoring a snapshot can resurrect previously valid grants, audit gaps and old idempotency records. Never assume timestamp expiry alone repairs a rollback. Database backup plus matching DEK is required for ciphertext recovery; protect them separately.
-
-Field encryption protects confidentiality against a D1 export alone. It does not protect authorization integrity against a D1 writer. Worker code, Cloudflare control plane/deployment, Muse's admin environment and browser are trusted; their compromise can expose runtime credentials. JavaScript cannot reliably zeroize strings, so plaintext is transient per-call memory with no secret cache. A stolen Pi bearer has its allowed authority during matching grants. Two hours bounds new credential use, not the lifetime of leaked content or created issues.
-
-Keep the vault's deployment repository/CI and Cloudflare administration outside Pi's accessible tools. If Pi must never call GitHub directly, enforce network/tool egress restrictions on the Pi host: MCP configuration alone does not restrict shell/network access. Tool visibility and Pi permission prompts are UX controls; the Worker enforces authorization.
-
-## Official references
-
-- [Cloudflare remote MCP guide](https://developers.cloudflare.com/agents/model-context-protocol/guides/remote-mcp-server/)
-- [Official SDK Fetch-native transport](https://github.com/modelcontextprotocol/typescript-sdk/blob/v1.x/src/server/webStandardStreamableHttp.ts)
-- [MCP Streamable HTTP specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)
-- [D1 primary/read replication semantics](https://developers.cloudflare.com/d1/best-practices/read-replication/)
-- [D1 API and atomic batches](https://developers.cloudflare.com/d1/worker-api/d1-database/)
-- [Workers secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
-- [Web Crypto](https://developers.cloudflare.com/workers/runtime-apis/web-crypto/)
-- [Workers limits](https://developers.cloudflare.com/workers/platform/limits/)
-- [D1 limits](https://developers.cloudflare.com/d1/platform/limits/) and [pricing](https://developers.cloudflare.com/d1/platform/pricing/)
-- [GitHub Contents API](https://docs.github.com/en/rest/repos/contents?apiVersion=2022-11-28)
-- [GitHub Issues API](https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28)
-
-Pi configuration follows the installed Pi 1.5.2 `docs/mcp.md`. License: MIT; see `LICENSE`.
+MIT.
