@@ -94,7 +94,8 @@ test('website must be https and is normalized', () => {
   assert.equal(normalizeWebsite('https://api.github.com'), 'https://api.github.com');
 });
 test('sensitive paths stay blocked', () => {
-  for (const path of ['.env', 'a/.git/config', 'private.key', 'secrets.json']) assert(!safePath(path));
+  for (const path of ['.env', 'a/.git/config', 'private.key', 'secrets.json',
+    'id_rsa', 'keys/id_ed25519', 'id_rsa.pub', 'id_dsa', 'id_ecdsa', 'key.ppk']) assert(!safePath(path));
   assert(safePath('README.md'));
   assert(safePath('docs/guide.md'));
 });
