@@ -26,7 +26,7 @@ Admin errors: {"error":"<fixed_code>"}; error status can include 400, 401,
 403, 404, 405, 409, 413, 415 or 503. No caught exception or upstream body is exposed.
 An untrusted host, mismatched Origin, or Sec-Fetch-Site: cross-site is refused.
 No cross-origin CORS access. Curl may omit Origin.
-Identifiers: 1–80 ASCII letters, digits, underscore or hyphen.
+Identifiers: 1–80 ASCII letters, digits, underscore or hyphen. Key names may also contain spaces (no leading, trailing, or double space).
 Service: an identifier. Label: an identifier, unique per service.
 Website: must start with https://, no spaces, <=2048 characters; trailing slashes are stripped.
 Secret value: 1–2048 printable ASCII characters, no spaces. Any token type works:
