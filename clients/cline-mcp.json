@@ -1,0 +1,1 @@
+{"mcpServers":{"vault":{"headers":{"Authorization":"Bearer <agent-token>"},"type":"streamableHttp","url":"https://<your-worker>.workers.dev/mcp"}}}
