@@ -92,15 +92,15 @@
           <div><h2 id="key-title">Add a key</h2><p>Service, a name, a website, and the key itself. Any token works — classic, fine-grained, API key.</p></div>
         </div>
         <form id="key-form" autocomplete="off">
-          <div class="grid"><label>Service<input id="key-service" list="services-list" required pattern="[A-Za-z0-9_\-]{1,80}" maxlength="80" placeholder="github" autocapitalize="none" spellcheck="false"></label><label>Key name<input id="key-label" required pattern="[A-Za-z0-9_\-]{1,80}" maxlength="80" placeholder="work"></label></div>
-          <label>Website<input id="key-website" type="url" required maxlength="2048" placeholder="https://api.github.com" autocapitalize="none" spellcheck="false"></label>
+          <div class="grid"><label>Service<input id="key-service" list="services-list" required maxlength="80" placeholder="github" autocapitalize="none" spellcheck="false"></label><label>Key name<input id="key-label" required maxlength="80" placeholder="work"></label></div>
+          <label>Website<input id="key-website" type="text" inputmode="url" required maxlength="2048" placeholder="https://api.github.com" autocapitalize="none" spellcheck="false"></label>
           <label>Key value<input id="secret" type="password" required maxlength="2048" autocomplete="new-password" spellcheck="false" placeholder="Paste the token or API key"></label>
           <input id="key-action" type="hidden" value="add">
           <button type="submit" class="primary">Save key</button><p id="key-status" class="status" role="status"></p>
         </form>
       </section>
 
-      <section class="card" aria-labelledby="unlock-title" data-master-only hidden>
+      <section class="card" aria-labelledby="unlock-title">
         <div class="card-head">
           <span class="icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
@@ -108,8 +108,9 @@
           <div><h2 id="unlock-title">Unlock for Pi</h2><p>Let Pi use a key for two hours. Say in chat what Pi may do with it — the repo, the task, the limits.</p></div>
         </div>
         <form id="unlock-form" autocomplete="off">
-          <label>Pi agent<input id="agent-id" required pattern="[A-Za-z0-9_\-]{1,80}" maxlength="80" placeholder="pi"></label>
-          <div class="grid"><label>Service<input id="unlock-service" list="services-list" required pattern="[A-Za-z0-9_\-]{1,80}" maxlength="80" placeholder="github" autocapitalize="none" spellcheck="false"></label><label>Key name<input id="unlock-label" required pattern="[A-Za-z0-9_\-]{1,80}" maxlength="80" placeholder="work"></label></div>
+          <label>Pi agent<input id="agent-id" required maxlength="80" placeholder="pi"></label>
+          <div class="grid"><label>Service<input id="unlock-service" list="services-list" required maxlength="80" placeholder="github" autocapitalize="none" spellcheck="false"></label><label>Key name<input id="unlock-label" required maxlength="80" placeholder="work"></label></div>
+          <p id="unlock-note" class="hint">Unlock needs the master password. Ask Muse to unlock a key for Pi.</p>
           <button type="submit" class="primary">Unlock for two hours</button><p id="unlock-status" class="status" role="status"></p>
         </form>
       </section>
@@ -134,7 +135,7 @@
         </span>
         <div><h2 id="revoke-title">Revoke</h2><p>Stop one access grant, remove an agent&rsquo;s access, or disable a key.</p></div>
       </div>
-      <form id="revoke-form" autocomplete="off"><div class="grid"><label>What to revoke<select id="revoke-target"><option value="grant">Grant</option><option value="agent">Agent</option><option value="key">Key</option></select></label><label>ID<input id="revoke-id" required pattern="[A-Za-z0-9_\-]{1,80}" maxlength="80" placeholder="ID, not a key label"></label></div><button class="danger" type="submit">Revoke access</button><p id="revoke-status" class="status" role="status"></p></form>
+      <form id="revoke-form" autocomplete="off"><div class="grid"><label>What to revoke<select id="revoke-target"><option value="grant">Grant</option><option value="agent">Agent</option><option value="key">Key</option></select></label><label>ID<input id="revoke-id" required maxlength="80" placeholder="ID, not a key label"></label></div><button class="danger" type="submit">Revoke access</button><p id="revoke-status" class="status" role="status"></p></form>
     </section>
   </main>
 
