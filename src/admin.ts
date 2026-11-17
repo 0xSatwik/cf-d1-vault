@@ -24,7 +24,7 @@ const keySchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('enable'), service: serviceName, label: labelName,
     request_id: requestId }).strict(),
   // Hard delete: removes the key row plus its grants and write idempotency rows.
-  // Audit rows stay as history. Master only (the human gate below allows add only).
+  // Audit rows stay as history. Human sign-in can delete too (see the gate above).
   z.object({ action: z.literal('delete'), service: serviceName, label: labelName,
     request_id: requestId }).strict()
 ]);
@@ -32,6 +32,7 @@ export { keySchema };
 const revokeSchema = z.object({ target: z.enum(['grant', 'agent', 'key']), id: identifier, request_id: requestId }).strict();
 const agentSchema = z.object({ id: identifier, token_hash: z.string().regex(/^[0-9a-f]{64}$/),
   request_id: requestId }).strict();
+export { agentSchema };
 async function body(request: Request): Promise<unknown> {
   if (request.headers.get('content-type')?.split(';')[0]?.trim() !== 'application/json')
     throw new VaultError('json_required', 415);
@@ -71,6 +72,14 @@ export async function admin(request: Request, env: Env, path: string): Promise<R
     const rows = await env.DB.prepare('SELECT id,service,label,website,enc_version,enabled FROM keys ORDER BY service,label LIMIT 100').all<KeyRow>();
     await finishAudit(env, audit, 'succeeded');
     return json({ keys: rows.results.map(safeKey), limit: 100 });
+  }
+  // Agents have no secrets to show — only the id and whether it is revoked.
+  // Master only: the human gate above already blocks this path for human.
+  if (path === '/admin/agents' && request.method === 'GET') {
+    const audit = await reserveAudit(env, { operation: 'admin_agents_list', status: 'reserved', request_id: crypto.randomUUID() });
+    const rows = await env.DB.prepare('SELECT id, revoked_at FROM agents ORDER BY id LIMIT 100').all<AgentRow>();
+    await finishAudit(env, audit, 'succeeded');
+    return json({ agents: rows.results.map(a => ({ id: a.id, revoked: a.revoked_at !== null })), limit: 100 });
   }
   if (request.method !== 'POST') throw new VaultError('method_not_allowed', 405);
   if (path === '/unlock') {
