@@ -18,8 +18,13 @@ const keySchema = z.discriminatedUnion('action', [
     secret: secretValue, enc_version: z.union([z.literal(1), z.literal(2)]).default(1),
     request_id: requestId }).strict(),
   z.object({ action: z.literal('disable'), service: serviceName, label: labelName,
+    request_id: requestId }).strict(),
+  // Hard delete: removes the key row plus its grants and write idempotency rows.
+  // Audit rows stay as history. Master only (the human gate below allows add only).
+  z.object({ action: z.literal('delete'), service: serviceName, label: labelName,
     request_id: requestId }).strict()
 ]);
+export { keySchema };
 const revokeSchema = z.object({ target: z.enum(['grant', 'agent', 'key']), id: identifier, request_id: requestId }).strict();
 const agentSchema = z.object({ id: identifier, token_hash: z.string().regex(/^[0-9a-f]{64}$/),
   request_id: requestId }).strict();
@@ -132,7 +137,13 @@ export async function admin(request: Request, env: Env, path: string): Promise<R
       auditStatement(env, { key_id: id, operation: `admin_key_${args.action}`, status: 'succeeded', request_id: args.request_id }),
       env.DB.prepare('INSERT INTO admin_requests VALUES(?,?,?)').bind(args.request_id, `admin_key_${args.action}`, now())
     ];
-    if (args.action === 'disable') {
+    if (args.action === 'delete') {
+      // Grants and write idempotency rows reference the key, so remove them
+      // first; audit rows keep the history (no foreign key there).
+      statements.push(env.DB.prepare('DELETE FROM grants WHERE key_id=?').bind(id));
+      statements.push(env.DB.prepare('DELETE FROM write_operations WHERE key_id=?').bind(id));
+      statements.push(env.DB.prepare('DELETE FROM keys WHERE id=?').bind(id));
+    } else if (args.action === 'disable') {
       statements.push(env.DB.prepare('UPDATE keys SET enabled=0 WHERE id=?').bind(id));
     } else {
       const site = normalizeWebsite(args.website);
@@ -143,7 +154,7 @@ export async function admin(request: Request, env: Env, path: string): Promise<R
       else statements.push(env.DB.prepare(`UPDATE keys SET website=?,ciphertext=?,nonce=?,enc_version=?,enabled=1 WHERE id=?`)
         .bind(site, encrypted.ciphertext, encrypted.nonce, args.enc_version, id));
     }
-    if (old) statements.push(env.DB.prepare('UPDATE grants SET revoked_at=? WHERE key_id=? AND revoked_at IS NULL').bind(now(), id));
+    if (old && args.action !== 'delete') statements.push(env.DB.prepare('UPDATE grants SET revoked_at=? WHERE key_id=? AND revoked_at IS NULL').bind(now(), id));
     await env.DB.batch(statements);
     return json({ id, service: args.service, label: args.label, action: args.action });
   }
