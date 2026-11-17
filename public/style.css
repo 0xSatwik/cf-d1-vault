@@ -138,6 +138,7 @@ button.primary, #sign-in {
 }
 button.secondary { color: #dbe6f8; background: rgba(255, 255, 255, .06); border-color: var(--border-strong); }
 button.danger { color: #ffd7de; background: var(--red-soft); border-color: rgba(255, 143, 163, .4); }
+button.armed { outline: 2px solid #ff8fa3; outline-offset: 2px; font-weight: 700; }
 :focus-visible { outline: 3px solid #92beff; outline-offset: 2px; }
 .credential { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
 .credential label { flex: 1 1 280px; margin: 0; }
