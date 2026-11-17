@@ -15,6 +15,10 @@ export class VaultError extends Error {
 }
 export const identifier = z.string().regex(/^[A-Za-z0-9_-]{1,80}$/);
 export const requestId = z.string().uuid();
+// Key names are human names: letters, digits, spaces, _ and -, 1–80 chars,
+// must start with a letter or digit (no leading/trailing/double space).
+export const labelName = z.string().min(1).max(80)
+  .regex(/^[A-Za-z0-9](?:[A-Za-z0-9_-]| [A-Za-z0-9_-])*$/);
 // A service is a short slug: github, cloudflare, openrouter, ... or a custom slug.
 export const serviceName = identifier;
 // The API base a key belongs to, e.g. https://api.github.com. HTTPS only, no spaces.
