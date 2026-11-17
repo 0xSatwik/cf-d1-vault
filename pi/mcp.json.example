@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "vault": {
+      "url": "https://vault.example.workers.dev/mcp",
+      "headers": { "Authorization": "Bearer <REQUEST_ONLY_TOKEN>" },
+      "exposure": "codemode",
+      "description": "Scoped GitHub tools; ask Muse to unlock when a grant expires"
+    }
+  }
+}
