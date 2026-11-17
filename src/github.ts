@@ -34,7 +34,9 @@ async function dispatch(env: Env, tokenHash: string, label: string,
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'cf-d1-vault/1.0',
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
-    body, signal: AbortSignal.timeout(15000)
+    // 25s, not longer: the Workers platform caps a request at ~30s wall-clock,
+    // so a longer timeout would be killed mid-flight instead of returning cleanly.
+    body, signal: AbortSignal.timeout(25000)
   });
   if (!response.ok) {
     await response.body?.cancel();
@@ -92,7 +94,7 @@ export async function createIssue(env: Env, tokenHash: string, raw: unknown): Pr
     .bind(admission.agent.id, args.request_id).first<{fingerprint: string; status: string}>();
   if (old) {
     if (old.fingerprint !== fingerprint) throw new VaultError('idempotency_conflict', 409);
-    return { status: old.status, duplicate: true, instruction: 'Never resend with a new ID; Muse must reconcile uncertain writes.' };
+    return { status: old.status, duplicate: true, instruction: 'Never resend with a new ID; the vault admin must reconcile uncertain writes.' };
   }
   const token = await decrypt(env, admission.key);
   const auditId = crypto.randomUUID();
@@ -118,6 +120,6 @@ export async function createIssue(env: Env, tokenHash: string, raw: unknown): Pr
     await env.DB.prepare('UPDATE write_operations SET status=? WHERE agent_id=? AND request_id=?')
       .bind(status, admission.agent.id, args.request_id).run();
     await finishAudit(env, auditId, status);
-    throw new VaultError('write_outcome_unknown_reconcile_with_muse', 503);
+    throw new VaultError('write_outcome_unknown_reconcile_with_admin', 503);
   }
 }
