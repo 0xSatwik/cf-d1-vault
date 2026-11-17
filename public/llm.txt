@@ -1,0 +1,280 @@
+# cf-d1-vault API
+
+Machine-readable API reference. /llms.txt and /llm.txt contain identical content.
+Base URL: the exact configured PUBLIC_ORIGIN, with no trailing slash.
+All responses use Cache-Control: no-store. No secret retrieval/export endpoint exists.
+Only service "github" is supported.
+
+## Authentication and transport
+
+Send Authorization: Bearer <credential> on every authenticated call.
+- master: verified against MASTER_SHA256; all administration operations.
+- human: verified against HUMAN_SHA256; only GET /whoami, GET /admin/keys,
+  POST /admin/keys with action "add".
+- agent: registered request-only bearer; /mcp only. Cannot unlock itself.
+Master is checked before human. Missing/invalid credentials return 401.
+A valid human attempting a master operation receives 403.
+HUMAN_SHA256 is an optional Worker secret containing the lowercase hex SHA-256
+of the owner-chosen human password; absence disables human access.
+Never commit or log password values, PATs or raw bearer credentials.
+
+All POST admin bodies: Content-Type: application/json, <=32768 bytes,
+strict JSON objects (no extra properties). request_id must be a UUID.
+Admin errors: {"error":"<fixed_code>"}; error status can include 400, 401,
+403, 404, 405, 409, 413, 415 or 503. No caught exception or upstream body is exposed.
+An untrusted host, mismatched Origin, or Sec-Fetch-Site: cross-site is refused.
+No cross-origin CORS access. Curl may omit Origin.
+Identifiers: 1–80 ASCII letters, digits, underscore or hyphen.
+
+## Shared policy shape
+
+Policy = {
+  "allowed_tools": ["github_read_file", "github_list_issues"],
+  "resources": [
+    {"repository":"example/project","branches":["main"],"paths":["README.md"]}
+  ]
+}
+allowed_tools: 1–3 entries from github_read_file, github_list_issues,
+github_create_issue. Creating issues is available only when
+ENABLE_GITHUB_WRITES is exactly "true". Policies may name it while disabled,
+but operations remain disabled on the server.
+resources: 1–20 entries; repository matches
+^[a-z0-9][a-z0-9_.-]{0,99}/[a-z0-9][a-z0-9_.-]{0,99}$.
+branches: 0–20 exact names, length 1–200; no whitespace, backslash, %, ?, #,
+control characters, "..", leading slash or trailing slash.
+paths: 0–100 exact paths, length 1–500; no empty, dot or dot-dot segments,
+backslash, %, ?, # or control characters. No wildcard expansion.
+Issue operations use repository only. Empty branches/paths permit no file reads.
+File operations additionally reject sensitive filenames and hidden segments.
+A grant policy must be a subset of both agent and key policies.
+
+## Curl conventions
+
+Run examples in Bash with Python 3. Set VAULT_URL to the Worker origin,
+MASTER to the master credential, HUMAN to the human password, and AGENT_TOKEN
+to the request-only bearer in a trusted environment. Never enable shell tracing.
+The examples contain variable references only, never actual credentials.
+Every execution below creates a fresh request UUID. If a mutation result is
+uncertain, inspect metadata before retrying; do not blindly rerun it.
+Unlock retries should retain their original UUID and identical arguments.
+
+## GET /whoami
+Auth: master or human. No body. Does not touch D1.
+Response 200: {"role":"master"} or {"role":"human"}. Invalid auth: 401.
+
+curl --fail-with-body -sS "$VAULT_URL/whoami" -H "Authorization: Bearer $HUMAN"
+
+## GET /admin/keys
+Auth: master or human. No body.
+Response 200: {"keys":[{"id":"UUID","service":"github","label":"work",
+"enc_version":1,"policy_json":"<JSON-encoded Policy>","enabled":1}],"limit":100}.
+Sorted by service,label. enabled is 0 or 1. No plaintext, ciphertext or nonce.
+Metadata reads are audited and can fail if mandatory audit capacity is exhausted.
+
+curl --fail-with-body -sS "$VAULT_URL/admin/keys" \
+  -H "Authorization: Bearer $MASTER"
+# For human listing, replace $MASTER with $HUMAN.
+
+## POST /admin/keys — add
+Auth: master or human.
+Request: {"action":"add","service":"github","label":"work","secret":"<PAT>",
+"policy":Policy,"enc_version":1,"request_id":"UUID"}.
+enc_version is 1 or 2 (default 1); the selected Worker DEK must be provisioned.
+secret is 1–2048 printable ASCII characters with no spaces.
+Response 200: {"id":"UUID","service":"github","label":"work","action":"add"}.
+An existing label is refused (409 label_exists); add never overwrites a key.
+
+# Reads the PAT without echo; requires bash and Python 3.
+read -r -s -p 'GitHub PAT: ' VAULT_PAT; printf '\n'
+export VAULT_PAT
+python3 - <<'PY' | curl --fail-with-body -sS "$VAULT_URL/admin/keys" \
+  -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' --data-binary @-
+import json, os, uuid
+print(json.dumps({"action":"add","service":"github","label":"work",
+  "secret":os.environ["VAULT_PAT"],"enc_version":1,
+  "policy":{"allowed_tools":["github_read_file","github_list_issues"],
+    "resources":[{"repository":"example/project","branches":["main"],"paths":["README.md"]}]},
+  "request_id":str(uuid.uuid4())}))
+PY
+unset VAULT_PAT
+# For human addition, replace $MASTER with $HUMAN.
+
+## POST /admin/keys — rotate
+Auth: master only; human: 403.
+Request: same as add, with "action":"rotate".
+Response 200: {"id":"UUID","service":"github","label":"work","action":"rotate"}.
+Preserves key ID, replaces PAT and policy, enables the key and revokes its grants.
+A missing label returns 404 key_missing. Encryption uses a fresh nonce.
+
+# Reads the PAT without echo; requires bash and Python 3.
+read -r -s -p 'GitHub PAT: ' VAULT_PAT; printf '\n'
+export VAULT_PAT
+python3 - <<'PY' | curl --fail-with-body -sS "$VAULT_URL/admin/keys" \
+  -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' --data-binary @-
+import json, os, uuid
+print(json.dumps({"action":"rotate","service":"github","label":"work",
+  "secret":os.environ["VAULT_PAT"],"enc_version":1,
+  "policy":{"allowed_tools":["github_read_file","github_list_issues"],
+    "resources":[{"repository":"example/project","branches":["main"],"paths":["README.md"]}]},
+  "request_id":str(uuid.uuid4())}))
+PY
+unset VAULT_PAT
+
+## POST /admin/keys — disable
+Auth: master only; human: 403.
+Request: {"action":"disable","service":"github","label":"work","request_id":"UUID"}.
+No secret, policy or encryption version is accepted.
+Response 200: {"id":"UUID","service":"github","label":"work","action":"disable"}.
+Disables the key and revokes its grants. Missing label: 404 key_missing.
+
+python3 - <<'PY' | curl --fail-with-body -sS "$VAULT_URL/admin/keys" \
+  -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' --data-binary @-
+import json, uuid
+print(json.dumps({"action":"disable","service":"github","label":"work","request_id":str(uuid.uuid4())}))
+PY
+
+## POST /unlock
+Auth: master only; human: 403.
+Request: {"agent_id":"pi-main","service":"github","key_label":"work",
+"allowed_tools":["github_read_file","github_list_issues"],
+"resources":[{"repository":"example/project","branches":["main"],"paths":["README.md"]}],
+"request_id":"UUID"}.
+IMPORTANT: policy fields are top-level here, not nested under "policy".
+Response 200: {"id":"GRANT_UUID","agent_id":"pi-main","key_id":"KEY_UUID",
+"service":"github","policy":Policy,"opened_at":1700000000,
+"expires_at":1700007200,"revoked_at":null}.
+Timestamps are Unix seconds. Fixed expiry is opened_at + 7200.
+Replay of an identical UUID returns the original grant, without renewal, even
+if expired or revoked (revoked_at can then be Unix seconds). Changed args with
+that UUID return 409 idempotency_conflict. No TTL field is accepted.
+Missing/disabled agent or key: disabled_or_missing. Wider scope: scope_exceeds_policy.
+
+python3 - <<'PY' | curl --fail-with-body -sS "$VAULT_URL/unlock" \
+  -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' --data-binary @-
+import json, uuid
+print(json.dumps({"agent_id":"pi-main","service":"github","key_label":"work",
+  "allowed_tools":["github_read_file","github_list_issues"],
+  "resources":[{"repository":"example/project","branches":["main"],"paths":["README.md"]}],
+  "request_id":str(uuid.uuid4())}))
+PY
+
+## POST /revoke
+Auth: master only; human: 403.
+Request: {"target":"grant","id":"GRANT_UUID","request_id":"UUID"}.
+target is grant, agent or key. id is the corresponding ID, not a key label.
+Response 200: {"status":"revoked"}, even if no matching row exists.
+Grant: revokes that grant. Agent: revokes identity and all its grants.
+Key: disables key and revokes all its grants. Cannot recall dispatched calls.
+
+python3 - <<'PY' | curl --fail-with-body -sS "$VAULT_URL/revoke" \
+  -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' --data-binary @-
+import json, uuid
+print(json.dumps({"target":"grant","id":"REPLACE_WITH_GRANT_ID","request_id":str(uuid.uuid4())}))
+PY
+
+## POST /admin/agents
+Auth: master only; human: 403.
+Request: {"id":"pi-main","token_hash":"<64 lowercase hex SHA-256 of agent bearer>",
+"policy":Policy,"request_id":"UUID"}.
+Response 201: {"id":"pi-main","status":"created"}.
+Agent identity is immutable. To rotate its bearer, revoke it and register a new ID.
+Only the bearer hash is stored. Do not send raw agent bearer in this body.
+
+python3 - <<'PY' | curl --fail-with-body -sS "$VAULT_URL/admin/agents" \
+  -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' --data-binary @-
+import json, os, hashlib, uuid
+print(json.dumps({"id":"pi-main","token_hash":hashlib.sha256(os.environ["AGENT_TOKEN"].encode()).hexdigest(),
+  "policy":{"allowed_tools":["github_read_file","github_list_issues"],
+    "resources":[{"repository":"example/project","branches":["main"],"paths":["README.md"]}]},
+  "request_id":str(uuid.uuid4())}))
+PY
+# AGENT_TOKEN must be exported for Python to read it.
+
+## POST /mcp — Streamable HTTP
+Auth: agent request-only bearer, not the administrative master/human credential.
+Stateless official MCP Streamable HTTP; not legacy SSE. No session ID, standalone
+SSE listener or resumable session. GET and DELETE /mcp return 405 with Allow: POST.
+Accept: application/json, text/event-stream. Content-Type: application/json.
+Send one JSON-RPC 2.0 object per request, <=32768 bytes; batches return 400.
+Initialization negotiates protocol version. Notifications have no JSON-RPC result;
+the SDK normally returns HTTP 202 for accepted notifications.
+Requests return JSON-RPC {"jsonrpc":"2.0","id":<request id>,"result":...}
+or an SDK JSON-RPC error. Authentication failure is HTTP 401 {"error":"unauthorized"}.
+The server closes its transport after each request. No MCP session header needed.
+
+### Initialize
+Request: {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+"protocolVersion":"2025-03-26","capabilities":{},
+"clientInfo":{"name":"vault-client","version":"1.0.0"}}}.
+Result: {"protocolVersion":"<negotiated>","capabilities":{"tools":{...}},
+"serverInfo":{"name":"cf-d1-vault","version":"1.0.0"},...}.
+Use the returned protocol version in MCP-Protocol-Version on subsequent calls.
+
+curl --fail-with-body -sS "$VAULT_URL/mcp" \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"vault-client","version":"1.0.0"}}}'
+
+### Initialized notification
+Request: {"jsonrpc":"2.0","method":"notifications/initialized"}.
+Response: HTTP 202, no body, under normal SDK handling.
+
+curl --fail-with-body -sS "$VAULT_URL/mcp" \
+  -H "Authorization: Bearer $AGENT_TOKEN" -H 'MCP-Protocol-Version: 2025-03-26' \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  --data '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+
+### List tools
+Request: {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}.
+Result: {"tools":[{"name":"github_read_file","description":"...","inputSchema":{...},"annotations":{...}},...]}.
+Always: github_read_file, github_list_issues. github_create_issue only when
+ENABLE_GITHUB_WRITES is exactly "true". Agent can discover tools while locked.
+
+curl --fail-with-body -sS "$VAULT_URL/mcp" \
+  -H "Authorization: Bearer $AGENT_TOKEN" -H 'MCP-Protocol-Version: 2025-03-26' \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  --data '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+
+### Call tools
+Request: {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{
+"name":"github_read_file","arguments":{"key_label":"work",
+"repository":"example/project","branch":"main","path":"README.md"}}}.
+Result: {"content":[{"type":"text","text":"<JSON-encoded adapter result>"}]}.
+Errors use isError:true and content[0].text containing JSON with a fixed error.
+Locked example decoded text: {"error":"unlock_required","service":"github",
+"label":"work","instruction":"Ask Muse to unlock this exact key and scope."}.
+Ask the master operator to unlock the exact scope, then retry the original tool.
+No returned PAT. Tool authorization intersects live agent, key and grant policies.
+
+curl --fail-with-body -sS "$VAULT_URL/mcp" \
+  -H "Authorization: Bearer $AGENT_TOKEN" -H 'MCP-Protocol-Version: 2025-03-26' \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  --data '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"github_read_file","arguments":{"key_label":"work","repository":"example/project","branch":"main","path":"README.md"}}}'
+
+Tool argument and decoded result shapes:
+- github_read_file args: {"key_label":"work","repository":"example/project",
+  "branch":"main","path":"README.md"}. Result: {"repository":"example/project",
+  "path":"README.md","branch":"main","sha":"<blob sha>","content":"<UTF-8 text>"}.
+- github_list_issues args: {"key_label":"work","repository":"example/project",
+  "page":1,"state":"open"}. page defaults to 1 (range 1–10), state defaults to
+  open (open|closed|all). Result: {"page":1,"issues":[{"number":1,"title":"...","state":"open"}]}.
+  Up to 20 entries; pull requests are excluded.
+- github_create_issue args: {"key_label":"work","repository":"example/project",
+  "request_id":"UUID","title":"Issue title","body":"Issue body"}.
+  title length 1–200, body length 0–8000. Result: {"number":1,"status":"succeeded"}.
+  An identical replay returns {"status":"reserved|unknown|succeeded","duplicate":true,
+  "instruction":"Never resend with a new ID; Muse must reconcile uncertain writes."}.
+  An uncertain write returns the tool error write_outcome_unknown_reconcile_with_muse.
+All tool argument schemas reject additional fields.
+See tools/list inputSchema for exact tool argument validation and defaults.
+Never retry an uncertain github_create_issue with a fresh request UUID: reconcile
+against GitHub first. Its request_id durably prevents redispatch of the same write.
+
+## Public static routes
+GET /, /index.html, /manual: human-facing page shell (no authentication).
+GET /manual.js, /style.css: same-origin frontend assets (no authentication).
+GET /llms.txt, /llm.txt: this reference (no authentication).
+The shell is public; viewing key metadata or adding a key requires authentication.
+Static responses expose only X-Vault-GitHub-Writes: true|false for UI availability.
+No third-party scripts, inline scripts or inline styles; CSP restricts both scripts
+and styles to self. Worker applies no-store, nosniff and anti-framing headers.
