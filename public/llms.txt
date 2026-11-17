@@ -45,10 +45,11 @@ POST /admin/keys
   {"action":"add","service","label","website","secret","request_id"} -> 200 {"id","service","label","action":"add"}
   {"action":"rotate","service","label","website","secret","request_id"} -> 200, replaces the secret (and website), re-enables the key.
   {"action":"disable","service","label","request_id"} -> 200, sets enabled=0.
+  {"action":"delete","service","label","request_id"} -> 200, hard-deletes the key row plus its grants and write idempotency rows (audit history stays). Cannot be undone. Master only.
   Optional "enc_version": 1 or 2, default 1 (the DEK that encrypts the value).
   Errors: label_exists (409) on add of an existing service+label; key_missing (404)
   on rotate/disable of an unknown service+label.
-  Rotate and disable revoke all live grants for the key.
+  Rotate and disable revoke all live grants for the key. Delete removes them.
 
 ## Agents
 
