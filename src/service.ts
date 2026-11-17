@@ -2,12 +2,12 @@ import { z } from 'zod';
 import { authorize } from './auth.js';
 import { sampledRead } from './audit.js';
 import { decrypt, redact } from './crypto.js';
-import { type Env, identifier, readBounded, serviceName, VaultError } from './types.js';
+import { type Env, identifier, labelName, readBounded, serviceName, VaultError } from './types.js';
 
 // Generic proxy for any stored service: the Worker calls the key's website with the
 // decrypted key, Pi never sees the key. The repo/path/endpoint is said in chat, not stored.
 export const serviceRequestSchema = z.object({
-  key_label: identifier,
+  key_label: labelName,
   service: serviceName,
   method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).default('GET'),
   path: z.string().min(1).max(2048).regex(/^\/[^\s\\]*$/).refine(s => !s.includes('..')),
