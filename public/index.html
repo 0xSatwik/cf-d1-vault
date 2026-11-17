@@ -45,10 +45,17 @@
         </span>
         <div><h2 id="signin-title">Sign in</h2><p>One password field, two levels. The human password adds keys and views the list. The master password unlocks everything.</p></div>
       </div>
-      <div class="credential">
+      <div class="credential" id="credential-row">
         <label>Password<input id="master" type="password" autocomplete="off" spellcheck="false" required maxlength="512" placeholder="Enter your password"></label>
         <button id="sign-in" type="button">Sign in</button>
         <button id="clear-master" type="button" class="secondary">Clear</button>
+      </div>
+      <div id="signin-state" class="signin-state" hidden>
+        <span class="check" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+        </span>
+        <div><strong id="signin-state-title">Signed in</strong><span id="signin-state-text"></span></div>
+        <button id="sign-out" type="button" class="secondary">Sign out</button>
       </div>
       <p id="auth-status" class="status" role="status"></p>
     </section>
