@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { admin } from './admin.js';
 import { authenticate } from './auth.js';
 import { createIssue, createIssueSchema, listIssues, listIssuesSchema, readFile, readFileSchema } from './github.js';
+import { serviceRequest, serviceRequestSchema } from './service.js';
 import { type Env, json, readBounded, VaultError } from './types.js';
 
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'";
@@ -20,28 +21,36 @@ async function mcp(request: Request, env: Env): Promise<Response> {
   const agent = await authenticate(request, env);
   // A fresh server and transport per HTTP request; no global transport/session state.
   const server = new McpServer({ name: 'cf-d1-vault', version: '1.0.0' });
-  const invoke = (schema: z.ZodType, fn: (env: Env, hash: string, args: unknown) => Promise<unknown>) =>
+  const invoke = (tool: string, schema: z.ZodType, fn: (env: Env, hash: string, args: unknown) => Promise<unknown>) =>
     async (args: unknown) => {
       try {
         const result = await fn(env, agent.token_hash, schema.parse(args));
         return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
       } catch (error) {
-        const label = z.object({ key_label: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/) }).safeParse(args);
+        console.error('tool failed', tool, error instanceof Error ? `${error.name}: ${error.message}\n${error.stack ?? ''}` : error);
+        const parsed = z.object({ key_label: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/).optional(),
+          service: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/).optional() }).safeParse(args);
+        // kind is the error class only (no message/stack) — safe to return, pins down failures.
+        const kind = error instanceof Error ? error.name : 'unknown';
         const result = error instanceof VaultError && error.code === 'unlock_required'
-          ? { error: 'unlock_required', service: 'github', label: label.success ? label.data.key_label : '',
-              instruction: 'Ask Muse to unlock this exact key and scope.' }
-          : { error: error instanceof VaultError ? error.code : 'operation_failed' };
+          ? { error: 'unlock_required', service: parsed.success && parsed.data.service ? parsed.data.service
+              : tool.startsWith('github_') ? 'github' : '',
+              label: parsed.success && parsed.data.key_label ? parsed.data.key_label : '',
+              instruction: 'Ask Muse to unlock this exact key.' }
+          : { error: error instanceof VaultError ? error.code : 'operation_failed', kind };
         return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
       }
     };
-  server.registerTool('github_read_file', { description: 'Read one exact allowed UTF-8 file on an allowed branch using an exact key label.',
-    inputSchema: readFileSchema, annotations: { readOnlyHint: true, openWorldHint: true } }, invoke(readFileSchema, readFile));
-  server.registerTool('github_list_issues', { description: 'List up to 20 issue numbers, titles and states; pages 1–10, exact key label.',
-    inputSchema: listIssuesSchema, annotations: { readOnlyHint: true, openWorldHint: true } }, invoke(listIssuesSchema, listIssues));
+  server.registerTool('github_read_file', { description: 'Read one exact UTF-8 file from a GitHub repo using an exact key label. The repo, branch and file are said in chat; the key is never shown.',
+    inputSchema: readFileSchema, annotations: { readOnlyHint: true, openWorldHint: true } }, invoke('github_read_file', readFileSchema, readFile));
+  server.registerTool('github_list_issues', { description: 'List up to 20 issue numbers, titles and states from a GitHub repo; pages 1–10, exact key label.',
+    inputSchema: listIssuesSchema, annotations: { readOnlyHint: true, openWorldHint: true } }, invoke('github_list_issues', listIssuesSchema, listIssues));
+  server.registerTool('service_request', { description: 'Call any stored service through the vault: the Worker calls the key\'s website with the decrypted key and returns the redacted response. The key is never shown. Use the service and key label from the unlock, and the path said in chat.',
+    inputSchema: serviceRequestSchema, annotations: { readOnlyHint: false, openWorldHint: true } }, invoke('service_request', serviceRequestSchema, serviceRequest));
   if (env.ENABLE_GITHUB_WRITES === 'true') server.registerTool('github_create_issue', {
     description: 'Create one issue with a durable request UUID. Never retry uncertain results using another UUID.',
     inputSchema: createIssueSchema, annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true }
-  }, invoke(createIssueSchema, createIssue));
+  }, invoke('github_create_issue', createIssueSchema, createIssue));
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined,
     enableJsonResponse: true, maxRequestBodySize: 32768 });
   await server.connect(transport);
