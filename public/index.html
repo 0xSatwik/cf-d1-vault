@@ -91,10 +91,10 @@
             <option value="resend">Resend</option>
             <option value="expo">Expo</option>
             <option value="__custom">Custom service…</option>
-          </select></label><label>Key name<input id="key-label" required maxlength="80" placeholder="work"></label></div>
+          </select></label><label>Key name<input id="key-label" maxlength="80" placeholder="work"></label></div>
           <label id="key-service-custom-row" hidden>Custom service<input id="key-service-custom" maxlength="80" placeholder="my-service" autocapitalize="none" spellcheck="false"></label>
-          <label>Website<input id="key-website" type="text" inputmode="url" required maxlength="2048" placeholder="https://api.github.com" autocapitalize="none" spellcheck="false"></label>
-          <label>Key value<input id="secret" type="password" required maxlength="2048" autocomplete="new-password" spellcheck="false" placeholder="Paste the token or API key"></label>
+          <label>Website<input id="key-website" type="text" inputmode="url" maxlength="2048" placeholder="https://api.github.com" autocapitalize="none" spellcheck="false"></label>
+          <label>Key value<input id="secret" type="password" maxlength="2048" autocomplete="new-password" spellcheck="false" placeholder="Paste the token or API key"></label>
           <input id="key-action" type="hidden" value="add">
           <button type="submit" class="primary">Save key</button><p id="key-status" class="status" role="status"></p>
         </form>
@@ -108,7 +108,7 @@
           <div><h2 id="unlock-title">Unlock for Pi</h2><p>Let Pi use a key for two hours. Say in chat what Pi may do with it — the repo, the task, the limits.</p></div>
         </div>
         <form id="unlock-form" autocomplete="off">
-          <label>Pi agent<input id="agent-id" required maxlength="80" placeholder="pi"></label>
+          <label>Pi agent<input id="agent-id" maxlength="80" placeholder="pi"></label>
           <div class="grid"><label>Service<select id="unlock-service">
             <option value="github" selected>GitHub</option>
             <option value="cloudflare">Cloudflare</option>
@@ -130,7 +130,7 @@
             <option value="resend">Resend</option>
             <option value="expo">Expo</option>
             <option value="__custom">Custom service…</option>
-          </select></label><label>Key name<input id="unlock-label" required maxlength="80" placeholder="work"></label></div>
+          </select></label><label>Key name<input id="unlock-label" maxlength="80" placeholder="work"></label></div>
           <label id="unlock-service-custom-row" hidden>Custom service<input id="unlock-service-custom" maxlength="80" placeholder="my-service" autocapitalize="none" spellcheck="false"></label>
           <p id="unlock-note" class="hint">Unlock needs the master password. Ask Muse to unlock a key for Pi.</p>
           <button type="submit" class="primary">Unlock for two hours</button><p id="unlock-status" class="status" role="status"></p>
@@ -157,7 +157,24 @@
         </span>
         <div><h2 id="revoke-title">Revoke</h2><p>Stop one access grant, remove an agent&rsquo;s access, or disable a key.</p></div>
       </div>
-      <form id="revoke-form" autocomplete="off"><div class="grid"><label>What to revoke<select id="revoke-target"><option value="grant">Grant</option><option value="agent">Agent</option><option value="key">Key</option></select></label><label>ID<input id="revoke-id" required maxlength="80" placeholder="ID, not a key label"></label></div><button class="danger" type="submit">Revoke access</button><p id="revoke-status" class="status" role="status"></p></form>
+      <form id="revoke-form" autocomplete="off"><div class="grid"><label>What to revoke<select id="revoke-target"><option value="grant">Grant</option><option value="agent">Agent</option><option value="key">Key</option></select></label><label>ID<input id="revoke-id" maxlength="80" placeholder="ID, not a key label"></label></div><button class="danger" type="submit">Revoke access</button><p id="revoke-status" class="status" role="status"></p></form>
+    </section>
+
+    <section class="card" aria-labelledby="agents-title" data-master-only hidden>
+      <div class="card-head spread">
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/></svg>
+        </span>
+        <div><h2 id="agents-title">Agents</h2><p>Which agents may call the vault. Add a new one with its token below.</p></div>
+        <button id="refresh-agents" type="button" class="secondary">Refresh agents</button>
+      </div>
+      <p id="agents-status" class="status" role="status">Sign in as Owner to see agents.</p>
+      <div id="agents-list" class="keys-list"></div>
+      <form id="agent-form" autocomplete="off">
+        <div class="grid"><label>Agent name<input id="agent-name" maxlength="80" placeholder="pi"></label><label>Token<input id="agent-token" type="password" maxlength="2048" autocomplete="new-password" spellcheck="false" placeholder="Paste the agent token"></label></div>
+        <p class="hint">Save the token somewhere safe — it is shown only here. The Worker stores only its SHA-256 hash, never the token itself. To remove an agent, use Revoke above with type Agent.</p>
+        <button type="submit" class="primary">Add agent</button><p id="agent-status" class="status" role="status"></p>
+      </form>
     </section>
   </main>
 
