@@ -250,6 +250,8 @@ field('revoke-form').addEventListener('submit', event => {
     await request('/revoke', { target: field('revoke-target').value, id });
     message('revoke-status', 'Revocation completed. Requests already dispatched cannot be recalled.');
     await refreshKeys();
+    // A revoke can target a grant, an agent or a key — refresh both lists.
+    if (role === 'master') await refreshAgents();
   });
 });
 async function sha256hex(text) {
