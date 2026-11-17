@@ -15,37 +15,30 @@ export class VaultError extends Error {
 }
 export const identifier = z.string().regex(/^[A-Za-z0-9_-]{1,80}$/);
 export const requestId = z.string().uuid();
-export const toolName = z.enum(['github_read_file', 'github_list_issues', 'github_create_issue']);
+// A service is a short slug: github, cloudflare, openrouter, ... or a custom slug.
+export const serviceName = identifier;
+// The API base a key belongs to, e.g. https://api.github.com. HTTPS only, no spaces.
+export const website = z.string().regex(/^https:\/\/\S{1,2048}$/);
+export function normalizeWebsite(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+// Validators for API-call parameters Pi mentions in chat (repo, branch, file).
+// These are call arguments, not stored policy: the vault stores no repo/branch/path.
 export const repoName = z.string().regex(/^[a-z0-9][a-z0-9_.-]{0,99}\/[a-z0-9][a-z0-9_.-]{0,99}$/);
 export const branchName = z.string().min(1).max(200).refine(s =>
   !/[\s\\%?#\x00-\x1f]/.test(s) && !s.includes('..') && !s.startsWith('/') && !s.endsWith('/'));
 export const filePath = z.string().min(1).max(500).refine(s =>
   s.split('/').every(p => p.length > 0 && p !== '.' && p !== '..') && !/[\\%?#\x00-\x1f]/.test(s));
-export const resourceSchema = z.object({
-  repository: repoName,
-  branches: z.array(branchName).max(20),
-  paths: z.array(filePath).max(100)
-}).strict();
-export const policySchema = z.object({
-  allowed_tools: z.array(toolName).min(1).max(3),
-  resources: z.array(resourceSchema).min(1).max(20)
-}).strict();
-export type Policy = z.infer<typeof policySchema>;
-export type ToolName = z.infer<typeof toolName>;
 export interface KeyRow {
-  id: string; service: string; label: string; ciphertext: string; nonce: string;
-  enc_version: number; policy_json: string; enabled: number;
+  id: string; service: string; label: string; website: string; ciphertext: string; nonce: string;
+  enc_version: number; enabled: number;
 }
-export interface AgentRow { id: string; token_hash: string; policy_json: string; revoked_at: number | null }
+export interface AgentRow { id: string; token_hash: string; revoked_at: number | null }
 export interface GrantRow {
-  id: string; agent_id: string; key_id: string; service: string; policy_json: string;
+  id: string; agent_id: string; key_id: string; service: string;
   opened_at: number; expires_at: number; revoked_at: number | null; admin_request_id: string;
 }
-export interface Operation {
-  tool: ToolName; repository: string; branch?: string; path?: string;
-}
 export function now(): number { return Math.floor(Date.now() / 1000); }
-export function parsePolicy(raw: string): Policy { return policySchema.parse(JSON.parse(raw)); }
 export function json(data: unknown, status = 200): Response {
   return Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 }
