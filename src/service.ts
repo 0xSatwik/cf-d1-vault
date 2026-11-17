@@ -5,7 +5,7 @@ import { decrypt, redact } from './crypto.js';
 import { type Env, identifier, labelName, readBounded, serviceName, VaultError } from './types.js';
 
 // Generic proxy for any stored service: the Worker calls the key's website with the
-// decrypted key, Pi never sees the key. The repo/path/endpoint is said in chat, not stored.
+// decrypted key, the agent never sees the key. The repo/path/endpoint is said in chat, not stored.
 export const serviceRequestSchema = z.object({
   key_label: labelName,
   service: serviceName,
