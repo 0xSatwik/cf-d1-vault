@@ -28,7 +28,7 @@ async function mcp(request: Request, env: Env): Promise<Response> {
         return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
       } catch (error) {
         console.error('tool failed', tool, error instanceof Error ? `${error.name}: ${error.message}\n${error.stack ?? ''}` : error);
-        const parsed = z.object({ key_label: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/).optional(),
+        const parsed = z.object({ key_label: z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9_-]| [A-Za-z0-9_-])*$/).max(80).optional(),
           service: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/).optional() }).safeParse(args);
         // kind is the error class only (no message/stack) — safe to return, pins down failures.
         const kind = error instanceof Error ? error.name : 'unknown';
