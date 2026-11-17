@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <title>Vault manual key entry</title>
+  <script src="/manual.js" defer></script>
+</head>
+<body>
+  <h1>Vault manual key entry</h1>
+  <p>Use a trusted Muse browser. Submit directly to this Worker. Nothing is stored in browser storage.</p>
+  <form id="entry" autocomplete="off">
+    <p><label>Master secret <input id="master" type="password" required autocomplete="off"></label></p>
+    <p><label>Action <select id="action"><option>add</option><option>rotate</option><option>disable</option></select></label></p>
+    <p><label>GitHub key label <input id="label" required pattern="[A-Za-z0-9_-]{1,80}"></label></p>
+    <p><label>Upstream PAT <input id="secret" type="password" autocomplete="off"></label></p>
+    <p><label>Encryption version <select id="version"><option>1</option><option>2</option></select></label></p>
+    <p><label>Policy JSON (exact resources)<br><textarea id="policy" rows="12" cols="75" spellcheck="false">{"allowed_tools":["github_read_file","github_list_issues"],"resources":[{"repository":"example/project","branches":["main"],"paths":["README.md"]}]}</textarea></label></p>
+    <p><button type="submit">Submit to vault</button></p>
+  </form>
+  <p id="status" role="status"></p>
+  <noscript>This page requires the same-origin manual.js script.</noscript>
+</body>
+</html>
