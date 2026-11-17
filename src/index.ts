@@ -41,7 +41,7 @@ async function mcp(request: Request, env: Env): Promise<Response> {
         return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
       }
     };
-  server.registerTool('github_read_file', { description: 'Read one exact UTF-8 file from a GitHub repo using an exact key label. The repo, branch and file are said in chat; the key is never shown.',
+  server.registerTool('github_read_file', { description: 'Read one exact UTF-8 file from a GitHub repo using an exact key label. The repo and file are said in chat; branch is optional and defaults to the repo default branch when omitted; the key is never shown.',
     inputSchema: readFileSchema, annotations: { readOnlyHint: true, openWorldHint: true } }, invoke('github_read_file', readFileSchema, readFile));
   server.registerTool('github_list_issues', { description: 'List up to 20 issue numbers, titles and states from a GitHub repo; pages 1–10, exact key label.',
     inputSchema: listIssuesSchema, annotations: { readOnlyHint: true, openWorldHint: true } }, invoke('github_list_issues', listIssuesSchema, listIssues));
