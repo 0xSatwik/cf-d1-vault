@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { encrypt, decrypt, sha256, verifyMaster, base64, redact } from '../src/crypto.js';
 import { authorize } from '../src/auth.js';
 import { safePath } from '../src/github.js';
-import { type Env, type KeyRow, normalizeWebsite, website } from '../src/types.js';
+import { type Env, type KeyRow, labelName, normalizeWebsite, website } from '../src/types.js';
 
 test('GCM binds all identity fields, detects tampering, and uses fresh nonces', async () => {
   const env = { VAULT_DEK_V1: base64(crypto.getRandomValues(new Uint8Array(32))),
@@ -23,6 +23,18 @@ test('master verifier and redaction', async () => {
   assert.equal(await verifyMaster('synthetic', await sha256('synthetic')), true);
   assert.equal(await verifyMaster('wrong', await sha256('synthetic')), false);
   assert.equal(redact('canary abc ghp_abcdefghijklmnopqrst', ['abc']), 'canary [REDACTED] [REDACTED]');
+});
+test('key names may contain spaces, but no leading/trailing/double space', () => {
+  assert.equal(labelName.safeParse('GitHub satwik work token').success, true);
+  assert.equal(labelName.safeParse('work').success, true);
+  assert.equal(labelName.safeParse('a').success, true);
+  assert.equal(labelName.safeParse('work-1_2').success, true);
+  assert.equal(labelName.safeParse(' work').success, false);
+  assert.equal(labelName.safeParse('work ').success, false);
+  assert.equal(labelName.safeParse('work  token').success, false);
+  assert.equal(labelName.safeParse('').success, false);
+  assert.equal(labelName.safeParse('x'.repeat(81)).success, false);
+  assert.equal(labelName.safeParse('work/token').success, false);
 });
 test('website must be https and is normalized', () => {
   assert.equal(website.safeParse('https://api.github.com').success, true);
