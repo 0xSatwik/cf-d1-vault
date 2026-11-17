@@ -231,8 +231,26 @@ async function refreshKeys() {
         await request('/admin/keys', { action: 'disable', service: key.service, label: key.label });
         await refreshKeys();
       }));
-      actions.append(rotate, disable);
-      if (role === 'master') card.append(actions);
+      const del = element('button', 'Delete', 'danger');
+      del.type = 'button';
+      del.addEventListener('click', () => {
+        if (!confirm(`Delete "${key.label}" for good? This cannot be undone.`)) return;
+        void run(del, 'keys-status', async () => {
+          await request('/admin/keys', { action: 'delete', service: key.service, label: key.label });
+          await refreshKeys();
+          message('keys-status', 'Key deleted.');
+        });
+      });
+      actions.append(rotate, disable, del);
+      // Rotate, Disable and Delete are master only. Human sign-in sees the
+      // buttons disabled, with the reason on hover, instead of hidden.
+      if (role !== 'master') {
+        for (const button of actions.querySelectorAll('button')) {
+          button.disabled = true;
+          button.title = 'Needs the master password — ask Muse to do this.';
+        }
+      }
+      card.append(actions);
       return card;
     });
     field('keys-list').replaceChildren(...cards);
