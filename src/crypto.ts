@@ -52,7 +52,9 @@ export async function decrypt(env: Env, row: KeyRow): Promise<string> {
   return new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(plaintext);
 }
 export function redact(value: string, secrets: string[]): string {
-  let clean = value;
-  for (const secret of secrets) if (secret) clean = clean.split(secret).join('[REDACTED]');
-  return clean.replace(/(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{16,})/g, '[REDACTED]');
+  // Mask complete token patterns before short configured secrets can split them.
+  let clean = value.replace(/(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{16,})/g, '[REDACTED]');
+  for (const secret of [...secrets].sort((a, b) => b.length - a.length))
+    if (secret) clean = clean.split(secret).join('[REDACTED]');
+  return clean;
 }
