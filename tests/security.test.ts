@@ -4,7 +4,7 @@ import { encrypt, decrypt, sha256, verifyMaster, base64, redact } from '../src/c
 import { authorize } from '../src/auth.js';
 import { safePath } from '../src/github.js';
 import { keySchema } from '../src/admin.js';
-import { type Env, type KeyRow, labelName, normalizeWebsite, website } from '../src/types.js';
+import { type Env, type KeyRow, labelName, normalizeWebsite, repoName, website } from '../src/types.js';
 
 test('GCM binds all identity fields, detects tampering, and uses fresh nonces', async () => {
   const env = { VAULT_DEK_V1: base64(crypto.getRandomValues(new Uint8Array(32))),
@@ -24,6 +24,21 @@ test('master verifier and redaction', async () => {
   assert.equal(await verifyMaster('synthetic', await sha256('synthetic')), true);
   assert.equal(await verifyMaster('wrong', await sha256('synthetic')), false);
   assert.equal(redact('canary abc ghp_abcdefghijklmnopqrst', ['abc']), 'canary [REDACTED] [REDACTED]');
+});
+test('repo names accept mixed case (GitHub names are case-insensitive)', () => {
+  assert.equal(repoName.safeParse('0xSatwik/cf-d1-vault').success, true);
+  assert.equal(repoName.safeParse('octocat/Hello-World').success, true);
+  assert.equal(repoName.safeParse('octocat/hello-world').success, true);
+  assert.equal(repoName.safeParse('octocat').success, false);
+  assert.equal(repoName.safeParse('octocat/hello world').success, false);
+});
+test('key enable action parses without website or secret', () => {
+  const ok = keySchema.safeParse({ action: 'enable', service: 'github',
+    label: 'old key', request_id: '22222222-2222-4222-8222-222222222222' });
+  assert.equal(ok.success, true);
+  assert.equal(keySchema.safeParse({ action: 'enable', service: 'github',
+    label: 'old key', website: 'https://api.github.com',
+    request_id: '22222222-2222-4222-8222-222222222222' }).success, false);
 });
 test('key delete action parses without website or secret', () => {
   const ok = keySchema.safeParse({ action: 'delete', service: 'github',
