@@ -1,7 +1,29 @@
 'use strict';
 const field = id => document.getElementById(id);
 const identifier = /^[A-Za-z0-9_-]{1,80}$/;
-let writesEnabled = false;
+// Pre-filled services from the Rakazo project (plus the ones we run on).
+// The website is only a starting point — edit it for any service.
+const SERVICES = {
+  github: 'https://api.github.com',
+  cloudflare: 'https://api.cloudflare.com',
+  openrouter: 'https://openrouter.ai/api/v1',
+  openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com',
+  google: 'https://generativelanguage.googleapis.com/v1beta',
+  composio: 'https://backend.composio.dev',
+  pipedream: 'https://api.pipedream.com',
+  e2b: 'https://api.e2b.dev',
+  daytona: 'https://app.daytona.io/api',
+  slack: 'https://slack.com/api',
+  telegram: 'https://api.telegram.org',
+  gmail: 'https://gmail.googleapis.com/gmail/v1',
+  'google-calendar': 'https://www.googleapis.com/calendar/v3',
+  notion: 'https://api.notion.com',
+  linear: 'https://api.linear.app',
+  resend: 'https://api.resend.com',
+  expo: 'https://exp.host'
+};
+let lastAutoWebsite = '';
 let role = null;
 let authGeneration = 0;
 function setStatus(id, text, kind) {
@@ -24,10 +46,6 @@ function showRole(next) {
       : 'You can add keys and view your key list.';
   }
   if (next !== 'master') field('key-action').value = 'add';
-  field('key-action-label').hidden = next !== 'master';
-  field('key-version-label').hidden = next !== 'master';
-  field('key-version-hint').hidden = next !== 'master';
-  if (next !== 'master') field('key-version').value = '1';
 }
 function clearAuth() {
   ++authGeneration;
@@ -70,74 +88,11 @@ function element(tag, text, className) {
   return node;
 }
 function message(id, text) { if (pageActive) field(id).textContent = text; }
-function addResource(builder, resource = {}) {
-  const rows = builder.querySelector('.resources');
-  if (rows.children.length >= 20) return;
-  const row = field('resource-template').content.cloneNode(true);
-  row.querySelector('.repository').value = resource.repository || '';
-  row.querySelector('.branches').value = (resource.branches || []).join(', ');
-  row.querySelector('.paths').value = (resource.paths || []).join(', ');
-  row.querySelector('.remove-resource').addEventListener('click', event => {
-    event.target.closest('.resource').remove();
-    syncResources(builder);
-  });
-  rows.append(row);
-  syncResources(builder);
-}
-function syncResources(builder) {
-  const rows = [...builder.querySelectorAll('.resource')];
-  rows.forEach((row, index) => {
-    row.querySelector('legend').textContent = `Repository ${index + 1}`;
-    row.querySelector('.remove-resource').disabled = rows.length === 1;
-  });
-  builder.querySelector('.add-resource').disabled = rows.length >= 20;
-}
-function setPolicy(builder, policy) {
-  builder.querySelectorAll('.tools input').forEach(input => {
-    input.checked = policy.allowed_tools.includes(input.value);
-  });
-  builder.querySelector('.resources').replaceChildren();
-  policy.resources.forEach(resource => addResource(builder, resource));
-}
-for (const id of ['key-policy', 'unlock-policy']) {
-  const builder = field(id);
-  builder.append(field('policy-template').content.cloneNode(true));
-  builder.querySelector('.add-resource').addEventListener('click', () => addResource(builder));
-  addResource(builder);
-}
-function policyFrom(id) {
-  const builder = field(id);
-  const allowed_tools = [...builder.querySelectorAll('.tools input:checked')].map(input => input.value);
-  if (!allowed_tools.length) throw new Error('Select at least one tool.');
-  if (!writesEnabled && allowed_tools.includes('github_create_issue')) throw new Error('Issue creation is disabled on this Worker.');
-  const resources = [...builder.querySelectorAll('.resource')].map(row => {
-    const repository = row.querySelector('.repository').value.trim();
-    if (!/^[a-z0-9][a-z0-9_.-]{0,99}\/[a-z0-9][a-z0-9_.-]{0,99}$/.test(repository)) {
-      throw new Error('Use a lowercase owner/repo for each resource.');
-    }
-    const split = name => {
-      const value = row.querySelector(`.${name}`).value.trim();
-      return value === '' ? [] : value.split(',').map(item => item.trim());
-    };
-    const branches = split('branches');
-    const paths = split('paths');
-    if (branches.length > 20 || branches.some(s => !s || s.length > 200 || /[\s\\%?#\x00-\x1f]/.test(s) || s.includes('..') || s.startsWith('/') || s.endsWith('/'))) {
-      throw new Error('Use up to 20 exact branches, each at most 200 characters; no spaces, traversal, backslashes or URL delimiters.');
-    }
-    if (paths.length > 100 || paths.some(s => !s || s.length > 500 || /[\\%?#\x00-\x1f]/.test(s) || !s.split('/').every(p => p && p !== '.' && p !== '..'))) {
-      throw new Error('Use up to 100 exact paths, each at most 500 characters; no empty segments, traversal, backslashes or URL delimiters.');
-    }
-    return { repository, branches, paths };
-  });
-  if (!resources.length || resources.length > 20) throw new Error('Add between 1 and 20 resources.');
-  return { allowed_tools, resources };
-}
 
 // Only fixed, locally authored messages are displayed for server/network errors.
 const errors = {
-  scope_exceeds_policy: 'The requested scope exceeds the agent or key policy.',
   disabled_or_missing: 'The agent or key is missing, disabled or revoked.',
-  label_exists: 'That label already exists. Choose Rotate to replace it.',
+  label_exists: 'That label already exists. Use Rotate on its card to replace it.',
   key_missing: 'No key exists with that label.',
   invalid_request: 'The Worker rejected the request format. Check the fields.',
   admin_request_already_used: 'This request ID has already been used. Refresh metadata before retrying.'
@@ -186,17 +141,31 @@ async function run(button, statusId, task) {
   catch (error) { message(statusId, error.message); }
   finally { button.disabled = false; }
 }
+// Fill the website from the chosen service, unless the user already typed their own.
+field('key-service').addEventListener('input', () => {
+  const site = SERVICES[field('key-service').value.trim().toLowerCase()];
+  const current = field('key-website').value;
+  if (site && (current === '' || current === lastAutoWebsite)) {
+    field('key-website').value = site;
+    lastAutoWebsite = site;
+  }
+});
 field('key-form').addEventListener('submit', event => {
   event.preventDefault();
   void run(event.submitter, 'key-status', async () => {
-    const policy = policyFrom('key-policy');
+    const service = field('key-service').value.trim().toLowerCase();
+    const label = field('key-label').value.trim();
+    const website = field('key-website').value.trim();
     const secret = field('secret').value;
-    if (!/^[\x21-\x7e]{1,2048}$/.test(secret)) throw new Error('The GitHub secret must contain 1–2048 printable ASCII characters without spaces.');
-    const payload = { action: field('key-action').value, service: 'github', label: field('key-label').value,
-      secret, enc_version: Number(field('key-version').value), policy };
+    if (!identifier.test(service)) throw new Error('Use a short service name, letters, digits, _ or -.');
+    if (!identifier.test(label)) throw new Error('Use a short key name, letters, digits, _ or -.');
+    if (!/^https:\/\/\S+$/.test(website)) throw new Error('Website must start with https:// and contain no spaces.');
+    if (!/^[\x21-\x7e]{1,2048}$/.test(secret)) throw new Error('The key value must contain 1–2048 printable ASCII characters without spaces.');
+    const payload = { action: field('key-action').value, service, label, website, secret };
     field('secret').value = '';
     await request('/admin/keys', payload);
     message('key-status', 'Key saved. Rotation revokes all existing grants for this key.');
+    field('key-action').value = 'add';
     await refreshKeys();
   });
 });
@@ -204,7 +173,7 @@ field('unlock-form').addEventListener('submit', event => {
   event.preventDefault();
   void run(event.submitter, 'unlock-status', async () => {
     const grant = await request('/unlock', { agent_id: field('agent-id').value,
-      service: field('unlock-service').value, key_label: field('unlock-label').value, ...policyFrom('unlock-policy') });
+      service: field('unlock-service').value.trim().toLowerCase(), key_label: field('unlock-label').value });
     if (!identifier.test(grant.id) || !Number.isFinite(grant.expires_at)) throw new Error('Unexpected grant metadata.');
     message('unlock-status', `Grant ID: ${grant.id} · Expires: ${new Date(grant.expires_at * 1000).toISOString()} (${grant.expires_at} Unix seconds).`);
   });
@@ -225,36 +194,27 @@ async function refreshKeys() {
       const card = element('article', undefined, 'key-card');
       card.append(element('h3', `${key.service} / ${key.label}`),
         element('p', key.enabled ? 'Ready to use' : 'Disabled', key.enabled ? 'status-ready' : 'status-disabled'),
+        element('p', key.website, 'hint'),
         element('p', `ID: ${key.id}`, 'hint'));
-      const policy = JSON.parse(key.policy_json);
-      const details = element('details');
-      
-      // Render policy metadata as readable text, never raw JSON.
-      details.replaceChildren(element('summary', 'Access details'));
-      const names = { github_read_file: 'Read files', github_list_issues: 'View issues', github_create_issue: 'Create issues' };
-      details.append(element('p', policy.allowed_tools.map(tool => names[tool] || 'Unknown permission').join(' · ')));
-      policy.resources.forEach(resource => {
-        details.append(element('p', resource.repository), element('p', `Branches: ${resource.branches.join(', ') || 'None'} · Files: ${resource.paths.join(', ') || 'None'}`, 'hint'));
-      });
-      card.append(details);
       const actions = element('div', undefined, 'actions');
       const rotate = element('button', 'Rotate', 'secondary');
       rotate.type = 'button';
       rotate.addEventListener('click', () => {
         field('key-action').value = 'rotate';
+        field('key-service').value = key.service;
         field('key-label').value = key.label;
-        field('key-version').value = String(key.enc_version);
+        field('key-website').value = key.website;
+        lastAutoWebsite = key.website;
         field('secret').value = '';
-        setPolicy(field('key-policy'), policy);
         field('key-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
         field('secret').focus({ preventScroll: true });
-        message('key-status', 'Policy loaded. Enter a replacement secret and review the scope before saving.');
+        message('key-status', 'Enter a replacement key value and save.');
       });
       const disable = element('button', 'Disable', 'danger');
       disable.type = 'button';
       disable.disabled = !key.enabled;
       disable.addEventListener('click', () => void run(disable, 'keys-status', async () => {
-        await request('/admin/keys', { action: 'disable', service: 'github', label: key.label });
+        await request('/admin/keys', { action: 'disable', service: key.service, label: key.label });
         await refreshKeys();
       }));
       actions.append(rotate, disable);
@@ -284,16 +244,8 @@ async function checkWorker() {
     try { response = await fetch('/index.html', { credentials: 'omit', cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(10000) }); }
     catch { throw new Error('Worker unreachable'); }
     const setting = response.headers.get('X-Vault-GitHub-Writes');
-    writesEnabled = response.ok && setting === 'true';
-    document.querySelectorAll('.tools input[value="github_create_issue"]').forEach(input => {
-      input.disabled = !writesEnabled;
-      if (!writesEnabled) input.checked = false;
-    });
-    document.querySelectorAll('.write-note').forEach(note => {
-      note.textContent = writesEnabled ? '— available' : '— disabled by the owner';
-    });
     if (!response.ok || setting === null) throw new Error('Worker configuration unavailable');
-    message('worker-status', `Worker reachable · GitHub writes ${writesEnabled ? 'enabled' : 'disabled'}`);
+    message('worker-status', `Worker reachable · GitHub writes ${setting === 'true' ? 'enabled' : 'disabled'}`);
   });
 }
 field('check-worker').addEventListener('click', () => void checkWorker());
