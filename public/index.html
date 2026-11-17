@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
-  <title>Vault · Your keys, Pi's access, your rules</title>
+  <title>Vault · Your keys, your agent&rsquo;s access, your rules</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/manual.js" defer></script>
 </head>
@@ -28,9 +28,9 @@
 
   <main>
     <section class="hero" aria-labelledby="hero-title">
-      <p class="eyebrow">Open source · Free tier · No keys in Pi</p>
-      <h1 id="hero-title">Every key.<br><span class="grad">Pi&rsquo;s access. Your rules.</span></h1>
-      <p class="lede">Store keys for GitHub, Cloudflare, OpenRouter and every service you use — encrypted. Unlock one for Pi for two hours. What Pi may do with it, you say in chat. Pi never sees a key.</p>
+      <p class="eyebrow">Open source · Free tier · No keys in your agent</p>
+      <h1 id="hero-title">Every key.<br><span class="grad">Your agent&rsquo;s access. Your rules.</span></h1>
+      <p class="lede">Store keys for GitHub, Cloudflare, OpenRouter and every service you use — encrypted. Unlock one for your agent for two hours. What your agent may do with it, you say in chat. Your agent never sees a key.</p>
       <ul class="chips">
         <li>Every service</li>
         <li>AES-256-GCM encrypted</li>
@@ -105,10 +105,10 @@
           <span class="icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
           </span>
-          <div><h2 id="unlock-title">Unlock for Pi</h2><p>Let Pi use a key for two hours. Say in chat what Pi may do with it — the repo, the task, the limits.</p></div>
+          <div><h2 id="unlock-title">Unlock for an agent</h2><p>Let an agent use a key for two hours. Say in chat what it may do with it — the repo, the task, the limits.</p></div>
         </div>
         <form id="unlock-form" autocomplete="off">
-          <label>Pi agent<input id="agent-id" maxlength="80" placeholder="pi"></label>
+          <label>Agent name<input id="agent-id" maxlength="80" placeholder="my-agent"></label>
           <div class="grid"><label>Service<select id="unlock-service">
             <option value="github" selected>GitHub</option>
             <option value="cloudflare">Cloudflare</option>
@@ -132,7 +132,7 @@
             <option value="__custom">Custom service…</option>
           </select></label><label>Key name<input id="unlock-label" maxlength="80" placeholder="work"></label></div>
           <label id="unlock-service-custom-row" hidden>Custom service<input id="unlock-service-custom" maxlength="80" placeholder="my-service" autocapitalize="none" spellcheck="false"></label>
-          <p id="unlock-note" class="hint">Unlock needs the master password. Ask Muse to unlock a key for Pi.</p>
+          <p id="unlock-note" class="hint">Unlock needs the master password. Ask your admin agent to unlock a key for this agent.</p>
           <button type="submit" class="primary">Unlock for two hours</button><p id="unlock-status" class="status" role="status"></p>
         </form>
       </section>
@@ -175,6 +175,26 @@
         <p class="hint">Save the token somewhere safe — it is shown only here. The Worker stores only its SHA-256 hash, never the token itself. To remove an agent, use Revoke above with type Agent.</p>
         <button type="submit" class="primary">Add agent</button><p id="agent-status" class="status" role="status"></p>
       </form>
+    </section>
+    <section class="card" aria-labelledby="connect-title">
+      <div class="card-head">
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        </span>
+        <div><h2 id="connect-title">Connect your agent</h2><p>Any MCP agent works — Claude Code, Cursor, Cline, Codex, Pi, or any Streamable HTTP client. Pick one, paste its token, copy the setup.</p></div>
+      </div>
+      <div class="grid"><label>Agent<select id="connect-client">
+        <option value="claude-code" selected>Claude Code</option>
+        <option value="cursor">Cursor</option>
+        <option value="cline">Cline</option>
+        <option value="codex">Codex</option>
+        <option value="pi">Pi</option>
+        <option value="generic">Any MCP client</option>
+      </select></label><label>Agent token<input id="connect-token" type="password" maxlength="2048" autocomplete="new-password" spellcheck="false" placeholder="Paste the agent token"></label></div>
+      <pre id="connect-snippet" class="snippet">Paste the agent token to see its setup.</pre>
+      <button id="copy-snippet" type="button" class="secondary">Copy setup</button>
+      <p id="connect-status" class="status" role="status"></p>
+      <p class="hint">The token is only pasted into the text above, inside this browser — nothing is sent anywhere, and it is cleared when you leave. For Codex the token stays in an environment variable instead of the config file.</p>
     </section>
   </main>
 
