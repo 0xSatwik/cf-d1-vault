@@ -22,5 +22,6 @@ ENABLE_GITHUB_WRITES = "false"
 [observability]
 enabled = false
 
-# Secret bindings, provisioned separately by Muse:
-# VAULT_DEK_V1, optional VAULT_DEK_V2, MASTER_SHA256
+# Secret bindings, provisioned separately by Muse (wrangler secret put):
+# VAULT_DEK_V1, optional VAULT_DEK_V2, MASTER_SHA256, HUMAN_SHA256
+# Nothing sensitive lives in [vars] below — only the public origin and a flag.
