@@ -2,22 +2,22 @@ import { z } from 'zod';
 import { adminRole } from './auth.js';
 import { auditStatement, finishAudit, prune, reserveAudit } from './audit.js';
 import { encrypt } from './crypto.js';
-import { type AgentRow, type Env, type GrantRow, type KeyRow, identifier, json, normalizeWebsite,
+import { type AgentRow, type Env, type GrantRow, type KeyRow, identifier, json, labelName, normalizeWebsite,
   now, readBounded, requestId, serviceName, VaultError, website } from './types.js';
 
 // A key is just: service + label (key name) + website + secret value. No repo/policy.
 // Any token works — classic PAT, fine-grained PAT, API key — the value is opaque.
 const secretValue = z.string().min(1).max(2048).regex(/^[\x21-\x7e]+$/);
-const unlockSchema = z.object({ agent_id: identifier, service: serviceName, key_label: identifier,
+const unlockSchema = z.object({ agent_id: identifier, service: serviceName, key_label: labelName,
   request_id: requestId }).strict();
 const keySchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('add'), service: serviceName, label: identifier, website,
+  z.object({ action: z.literal('add'), service: serviceName, label: labelName, website,
     secret: secretValue, enc_version: z.union([z.literal(1), z.literal(2)]).default(1),
     request_id: requestId }).strict(),
-  z.object({ action: z.literal('rotate'), service: serviceName, label: identifier, website,
+  z.object({ action: z.literal('rotate'), service: serviceName, label: labelName, website,
     secret: secretValue, enc_version: z.union([z.literal(1), z.literal(2)]).default(1),
     request_id: requestId }).strict(),
-  z.object({ action: z.literal('disable'), service: serviceName, label: identifier,
+  z.object({ action: z.literal('disable'), service: serviceName, label: labelName,
     request_id: requestId }).strict()
 ]);
 const revokeSchema = z.object({ target: z.enum(['grant', 'agent', 'key']), id: identifier, request_id: requestId }).strict();
