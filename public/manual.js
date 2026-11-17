@@ -4,30 +4,61 @@ const identifier = /^[A-Za-z0-9_-]{1,80}$/;
 let writesEnabled = false;
 let role = null;
 let authGeneration = 0;
+function setStatus(id, text, kind) {
+  const node = field(id);
+  node.textContent = text;
+  node.className = 'status' + (kind ? ' ' + kind : '');
+}
 function showRole(next) {
   role = next;
   document.querySelectorAll('[data-master-only]').forEach(node => { node.hidden = next !== 'master'; });
   field('role-badge').textContent = next === 'master' ? 'Owner' : next === 'human' ? 'Key contributor' : 'Not signed in';
   field('role-badge').className = 'badge ' + (next === 'master' ? 'badge-owner' : next === 'human' ? 'badge-human' : 'badge-off');
+  field('signin-state').hidden = !next;
+  field('credential-row').hidden = !!next;
+  document.querySelector('.signin').classList.toggle('signed-in', !!next);
+  if (next) {
+    field('signin-state-title').textContent = next === 'master' ? 'Signed in as Owner' : 'Signed in as Key contributor';
+    field('signin-state-text').textContent = next === 'master'
+      ? 'Full access — add, unlock, revoke and manage keys.'
+      : 'You can add keys and view your key list.';
+  }
   if (next !== 'master') field('key-action').value = 'add';
   field('key-action-label').hidden = next !== 'master';
   field('key-version-label').hidden = next !== 'master';
   field('key-version-hint').hidden = next !== 'master';
   if (next !== 'master') field('key-version').value = '1';
 }
+function clearAuth() {
+  ++authGeneration;
+  field('master').value = '';
+  field('secret').value = '';
+  showRole(null);
+  field('keys-list').replaceChildren();
+  setStatus('auth-status', 'Signed out. Password cleared.', '');
+  setStatus('keys-status', 'Sign in to see your keys.', '');
+  field('master').focus();
+}
 async function signIn() {
   const generation = ++authGeneration;
   showRole(null);
   field('keys-list').replaceChildren();
-  message('auth-status', 'Checking password…');
+  setStatus('auth-status', 'Checking password…', '');
+  setStatus('keys-status', 'Sign in to see your keys.', '');
+  field('sign-in').disabled = true;
   try {
     const result = await request('/whoami');
     if (generation !== authGeneration) return;
     if (!['master', 'human'].includes(result.role)) throw new Error('Unexpected sign-in response.');
     showRole(result.role);
-    message('auth-status', result.role === 'human' ? 'You can add keys and view your key list.' : 'You have full access.');
+    setStatus('auth-status', result.role === 'human' ? 'Signed in — you can add keys and view your key list.' : 'Signed in — you have full access.', 'ok');
     await refreshKeys();
-  } catch (error) { if (generation === authGeneration) message('auth-status', error.message); }
+  } catch (error) {
+    if (generation === authGeneration) {
+      setStatus('auth-status', error.message, 'error');
+      setStatus('keys-status', 'Sign in to see your keys.', '');
+    }
+  } finally { field('sign-in').disabled = false; }
 }
 let pageActive = true;
 const controllers = new Set();
@@ -242,17 +273,11 @@ field('master').addEventListener('input', () => {
   ++authGeneration;
   showRole(null);
   field('keys-list').replaceChildren();
-  message('auth-status', 'Sign in to continue.');
+  setStatus('auth-status', 'Sign in to continue.', '');
+  setStatus('keys-status', 'Sign in to see your keys.', '');
 });
-field('clear-master').addEventListener('click', () => {
-  ++authGeneration;
-  field('master').value = '';
-  field('secret').value = '';
-  showRole(null);
-  field('keys-list').replaceChildren();
-  message('auth-status', 'Password cleared.');
-  field('master').focus();
-});
+field('clear-master').addEventListener('click', () => clearAuth());
+field('sign-out').addEventListener('click', () => clearAuth());
 async function checkWorker() {
   await run(field('check-worker'), 'worker-status', async () => {
     let response;
@@ -279,6 +304,7 @@ window.addEventListener('pagehide', () => {
   ++authGeneration;
   showRole(null);
   field('keys-list').replaceChildren();
+  setStatus('keys-status', 'Sign in to see your keys.', '');
   field('master').value = '';
   field('secret').value = '';
   controllers.forEach(controller => controller.abort());
