@@ -315,6 +315,38 @@ async function refreshKeys() {
         field('secret').focus({ preventScroll: true });
         message('key-status', 'Enter a replacement key value and save.');
       });
+      const rename = element('button', 'Rename', 'secondary');
+      rename.type = 'button';
+      // Inline rename: no native prompt() (auto-dismissed by automated
+      // browsers, tiny on mobile). The heading swaps for an editor; Save
+      // validates the new name the same way the Worker does.
+      rename.addEventListener('click', () => {
+        const heading = card.querySelector('h3');
+        const input = element('input', undefined, 'rename-input');
+        input.type = 'text';
+        input.value = key.label;
+        input.maxLength = 80;
+        input.setAttribute('aria-label', 'New key name');
+        const save = element('button', 'Save', 'primary');
+        save.type = 'button';
+        const cancel = element('button', 'Cancel', 'secondary');
+        cancel.type = 'button';
+        const editor = element('div', undefined, 'rename-editor');
+        editor.append(input, save, cancel);
+        heading.replaceWith(editor);
+        input.focus();
+        input.select();
+        cancel.addEventListener('click', () => editor.replaceWith(heading));
+        save.addEventListener('click', () => void run(save, 'keys-status', async () => {
+          const newLabel = input.value.trim();
+          if (!/^[A-Za-z0-9](?:[A-Za-z0-9_-]| [A-Za-z0-9_-])*$/.test(newLabel))
+            throw new Error('Enter a key name: letters, digits, spaces, _ or -, starting with a letter or digit.');
+          if (newLabel === key.label) { editor.replaceWith(heading); return; }
+          await request('/admin/keys', { action: 'rename', service: key.service, label: key.label, new_label: newLabel });
+          await refreshKeys();
+          message('keys-status', 'Key renamed. Existing grants for it were revoked — unlock again with the new name.');
+        }));
+      });
       const disable = element('button', 'Disable', 'danger');
       disable.type = 'button';
       disable.addEventListener('click', () => void run(disable, 'keys-status', async () => {
@@ -358,7 +390,7 @@ async function refreshKeys() {
           message('keys-status', 'Key deleted.');
         });
       });
-      actions.append(rotate, key.enabled ? disable : enable, del);
+      actions.append(rename, rotate, key.enabled ? disable : enable, del);
       card.append(actions);
       return card;
     });
