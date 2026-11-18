@@ -19,7 +19,7 @@ There is no stored repo/branch/path policy. What the agent may do with a key is 
 Trusted admin environment / human browser
   holds: raw high-entropy master, upstream key during entry
   POST /admin/agents  -> register SHA-256 bearer hash
-  POST /admin/keys    -> add / rotate / disable / enable / delete encrypted key rows
+  POST /admin/keys    -> add / rotate / disable / enable / delete / rename encrypted key rows
   POST /unlock        -> agent + service + key label, 7200 seconds
   POST /revoke        -> grant / agent / key
               | HTTPS Authorization: Bearer <MASTER_SECRET>
@@ -84,8 +84,8 @@ Any other service works too: type its slug and website. Token type does not matt
 
 Open the Worker URL in a browser. One password field, two levels:
 
-- **Human password** (owner-chosen): add, rotate, disable, delete and enable keys, and view the key list. Unlock, revoke and agents stay master-only.
-- **Master password** (admin-held): everything — add, rotate, disable, enable, delete, unlock, revoke, agents.
+- **Human password** (owner-chosen): add, rotate, disable, delete, enable and rename keys, and view the key list. Unlock, revoke and agents stay master-only.
+- **Master password** (admin-held): everything — add, rotate, disable, enable, delete, rename, unlock, revoke, agents.
 
 Add a key asks for service, key name, website, key value — nothing else. Unlock for an agent asks for agent, service, key name — two hours. The signed-in state is a green banner ("Signed in as Key contributor" / "Signed in as Owner") with a Sign out button; the password form hides while signed in. Wrong password shows red "Password not recognized." Keys list shows service, label, website, status and ID. Secret values are never shown.
 
@@ -99,7 +99,7 @@ Auth: `Authorization: Bearer <credential>` on every authenticated call. Master i
 
 - `GET /whoami` → `{"role":"master"|"human"}`
 - `GET /admin/keys` → `{"keys":[{"id","service","label","website","enc_version","enabled"}],"limit":100}`
-- `POST /admin/keys` — `{"action":"add"|"rotate"|"disable"|"enable"|"delete","service","label","website","secret","request_id"}`. `disable`, `enable` and `delete` take only service, label, request_id. Rotate and disable revoke all live grants for the key; enable does not revive them. `delete` hard-deletes the key row plus its grants and write idempotency rows (audit history stays); it cannot be undone. Human sign-in can add, rotate, disable, enable and delete; unlock, revoke and agents stay master-only. A label must be unique per service. `secret` is 1–2048 printable ASCII, no spaces. `website` must start with `https://`.
+- `POST /admin/keys` — `{"action":"add"|"rotate"|"disable"|"enable"|"delete"|"rename","service","label","website","secret","request_id"}`. `disable`, `enable` and `delete` take only service, label, request_id. `rename` takes service, label, `new_label`, request_id; it decrypts with the old label and re-encrypts with the new one (the label is part of the encryption AAD), so the secret value is unchanged. Rotate, disable and rename revoke all live grants for the key; enable does not revive them. `delete` hard-deletes the key row plus its grants and write idempotency rows (audit history stays); it cannot be undone. Human sign-in can add, rotate, disable, enable, delete and rename; unlock, revoke and agents stay master-only. A label must be unique per service. `secret` is 1–2048 printable ASCII, no spaces. `website` must start with `https://`.
 - `POST /admin/agents` (master) — `{"id","token_hash","request_id"}`. `token_hash` is the lowercase hex SHA-256 of the agent's request-only bearer. The raw bearer is never stored.
 - `POST /unlock` (master) — `{"agent_id","service","key_label","request_id"}` → a grant `{"id","agent_id","key_id","service","opened_at","expires_at","revoked_at"}` with `expires_at = opened_at + 7200`. Replaying the same `request_id` returns the original grant, never a fresh one. The key must exist and be enabled; the agent must exist and not be revoked.
 - `POST /revoke` (master) — `{"target":"grant"|"agent"|"key","id","request_id"}`. Revoking an agent revokes its grants; disabling a key revokes its grants.
