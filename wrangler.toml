@@ -12,11 +12,11 @@ run_worker_first = true
 [[d1_databases]]
 binding = "DB"
 database_name = "cf-vault"
-database_id = "1c8c06f2-7e12-4768-8d11-36fd31c4e663"
+database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
 
 [vars]
-PUBLIC_ORIGIN = "https://cf-d1-vault.hardeepwalia77.workers.dev"
+PUBLIC_ORIGIN = "https://<name>.<subdomain>.workers.dev"
 ENABLE_GITHUB_WRITES = "false"
 
 [observability]
