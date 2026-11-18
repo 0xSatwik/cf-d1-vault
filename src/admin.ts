@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { adminRole } from './auth.js';
 import { auditStatement, finishAudit, prune, reserveAudit } from './audit.js';
-import { encrypt } from './crypto.js';
+import { decrypt, encrypt } from './crypto.js';
 import { type AgentRow, type Env, type GrantRow, type KeyRow, identifier, json, labelName, normalizeWebsite,
   now, readBounded, requestId, serviceName, VaultError, website } from './types.js';
 
@@ -22,6 +22,12 @@ const keySchema = z.discriminatedUnion('action', [
   // Re-enable a disabled key without changing its secret. Grants revoked at
   // disable time stay revoked; a fresh unlock is needed to use it again.
   z.object({ action: z.literal('enable'), service: serviceName, label: labelName,
+    request_id: requestId }).strict(),
+  // Rename a key label. The label is part of the encryption AAD, so the
+  // handler decrypts with the old label and re-encrypts with the new one;
+  // the secret value itself does not change. Active grants are revoked,
+  // because agents address a key by its label and must re-unlock.
+  z.object({ action: z.literal('rename'), service: serviceName, label: labelName, new_label: labelName,
     request_id: requestId }).strict(),
   // Hard delete: removes the key row plus its grants and write idempotency rows.
   // Audit rows stay as history. Human sign-in can delete too (see the gate above).
@@ -59,12 +65,12 @@ export async function admin(request: Request, env: Env, path: string): Promise<R
   if (role === 'human' && !(path === '/admin/keys' && ['GET', 'POST'].includes(request.method)))
     throw new VaultError('forbidden', 403);
   // Human sign-in can list keys and manage them (add/rotate/disable/delete/
-  // enable). Unlock, revoke and agents stay master only.
+  // enable/rename). Unlock, revoke and agents stay master only.
   const raw = request.method === 'POST' ? await body(request) : undefined;
   if (role === 'human' && request.method === 'POST' &&
       (typeof raw !== 'object' || raw === null || !('action' in raw) ||
        typeof raw.action !== 'string' ||
-       !['add', 'rotate', 'disable', 'delete', 'enable'].includes(raw.action)))
+       !['add', 'rotate', 'disable', 'delete', 'enable', 'rename'].includes(raw.action)))
     throw new VaultError('forbidden', 403);
   await prune(env);
   if (path === '/admin/keys' && request.method === 'GET') {
@@ -163,6 +169,19 @@ export async function admin(request: Request, env: Env, path: string): Promise<R
       statements.push(env.DB.prepare('UPDATE keys SET enabled=0 WHERE id=?').bind(id));
     } else if (args.action === 'enable') {
       statements.push(env.DB.prepare('UPDATE keys SET enabled=1 WHERE id=?').bind(id));
+    } else if (args.action === 'rename') {
+      if (!old) throw new VaultError('key_missing', 404);
+      // A different key already using the new label blocks the rename.
+      const clash = await env.DB.prepare('SELECT id FROM keys WHERE service=? AND label=? AND id!=?')
+        .bind(args.service, args.new_label, id).first();
+      if (clash) throw new VaultError('label_exists', 409);
+      // Decrypt with the old label (it is in the AAD), re-encrypt with the
+      // new one. The secret value is unchanged.
+      const plaintext = await decrypt(env, old);
+      const encrypted = await encrypt(env, { id, service: args.service, label: args.new_label,
+        enc_version: old.enc_version }, plaintext);
+      statements.push(env.DB.prepare('UPDATE keys SET label=?,ciphertext=?,nonce=? WHERE id=?')
+        .bind(args.new_label, encrypted.ciphertext, encrypted.nonce, id));
     } else {
       const site = normalizeWebsite(args.website);
       const encrypted = await encrypt(env, { id, service: args.service, label: args.label, enc_version: args.enc_version }, args.secret);
@@ -174,7 +193,8 @@ export async function admin(request: Request, env: Env, path: string): Promise<R
     }
     if (old && args.action !== 'delete' && args.action !== 'enable') statements.push(env.DB.prepare('UPDATE grants SET revoked_at=? WHERE key_id=? AND revoked_at IS NULL').bind(now(), id));
     await env.DB.batch(statements);
-    return json({ id, service: args.service, label: args.label, action: args.action });
+    const outLabel = args.action === 'rename' ? args.new_label : args.label;
+    return json({ id, service: args.service, label: outLabel, action: args.action });
   }
   throw new VaultError('not_found', 404);
 }
