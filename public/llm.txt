@@ -12,7 +12,7 @@ notion, linear, resend, expo, or any custom service slug.
 Send Authorization: Bearer <credential> on every authenticated call.
 - master: verified against MASTER_SHA256; all administration operations.
 - human: verified against HUMAN_SHA256; only GET /whoami, GET /admin/keys,
-  POST /admin/keys with action add/rotate/disable/delete/enable.
+  POST /admin/keys with action add/rotate/disable/delete/enable/rename.
   Unlock, revoke and agents are master only.
 - agent: registered request-only bearer; /mcp only. Cannot unlock itself.
 Master is checked before human. Missing/invalid credentials return 401.
@@ -45,13 +45,14 @@ GET /admin/keys
 POST /admin/keys
   {"action":"add","service","label","website","secret","request_id"} -> 200 {"id","service","label","action":"add"}
   {"action":"rotate","service","label","website","secret","request_id"} -> 200, replaces the secret (and website), re-enables the key.
+  {"action":"rename","service","label","new_label","request_id"} -> 200, changes the key name. The label is part of the encryption AAD, so the Worker decrypts with the old label and re-encrypts with the new one; the secret value is unchanged. Revokes live grants (agents must re-unlock with the new name).
   {"action":"disable","service","label","request_id"} -> 200, sets enabled=0.
   {"action":"delete","service","label","request_id"} -> 200, hard-deletes the key row plus its grants and write idempotency rows (audit history stays). Cannot be undone.
   {"action":"enable","service","label","request_id"} -> 200, sets enabled=1. Grants revoked at disable time stay revoked.
   Optional "enc_version": 1 or 2, default 1 (the DEK that encrypts the value).
-  Errors: label_exists (409) on add of an existing service+label; key_missing (404)
-  on rotate/disable/delete/enable of an unknown service+label.
-  Rotate and disable revoke all live grants for the key. Delete removes them. Enable does not revive revoked grants.
+  Errors: label_exists (409) on add of an existing service+label, and on rename to a label another key in the same service already uses; key_missing (404)
+  on rotate/disable/delete/enable/rename of an unknown service+label.
+  Rotate, disable and rename revoke all live grants for the key. Delete removes them. Enable does not revive revoked grants.
 
 ## Agents
 
