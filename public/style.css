@@ -163,6 +163,9 @@ p { color: var(--muted); }
 .status-ready::before, .status-disabled::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .actions { display: flex; gap: 10px; margin-top: 18px; }
 .actions button { padding: 9px 14px; font-size: .85rem; }
+.rename-editor { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.rename-editor input { flex: 1; min-width: 0; }
+.rename-editor button { padding: 9px 14px; font-size: .85rem; }
 summary { color: #adcfff; cursor: pointer; margin: 10px 0; font-size: .9rem; }
 details p { font-size: .88rem; }
 
