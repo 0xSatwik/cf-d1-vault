@@ -133,7 +133,7 @@ Per client:
 
 Tools:
 
-- **`github_read_file`** — read one exact UTF-8 file (≤32 KiB) from a repo: `{key_label, repository, path}` plus optional `branch` (repo default branch when omitted). Paths under `.env`, `.git`, `secrets`, or ending `.pem`/`.key`/`.env`/`.ppk`, or named `id_rsa`/`id_dsa`/`id_ecdsa`/`id_ed25519` (plus `.pub`) are refused. Repository, branch and path come from chat.
+- **`github_read_file`** — read one exact UTF-8 file (≤256 KiB) from a repo: `{key_label, repository, path}` plus optional `branch` (repo default branch when omitted). Paths under `.env`, `.git`, `secrets`, or ending `.pem`/`.key`/`.env`/`.ppk`, or named `id_rsa`/`id_dsa`/`id_ecdsa`/`id_ed25519` (plus `.pub`) are refused. Repository, branch and path come from chat.
 - **`github_list_issues`** — list up to 20 issues: `{key_label, repository, page, state}`.
 - **`github_create_issue`** — only registered when `ENABLE_GITHUB_WRITES=true`: `{key_label, repository, request_id, title, body}`. Durable request UUID; an uncertain write is never retried with a new UUID — the vault admin reconciles it.
 - **`service_request`** — call any stored service: `{key_label, service, method, path, body?}`. The Worker calls the key's stored website with the decrypted key and returns the redacted response (sliced to 32768 characters). The key is never shown to the agent. Upstream fetch timeout is 25 seconds (see "Limits" below).
