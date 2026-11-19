@@ -59,10 +59,10 @@ export async function readFile(env: Env, tokenHash: string, raw: unknown): Promi
   // No branch given: omit ref and GitHub answers from the repo's default branch.
   if (args.branch) url.searchParams.set('ref', args.branch);
   const response = await dispatch(env, tokenHash, args.key_label, admission, url, token);
-  const data = z.object({ type: z.literal('file'), encoding: z.literal('base64'), size: z.number().max(32768),
-    content: z.string().max(50000), sha: z.string() }).parse(JSON.parse(await readBounded(response, 65536)));
+  const data = z.object({ type: z.literal('file'), encoding: z.literal('base64'), size: z.number().max(262144),
+    content: z.string().max(360000), sha: z.string() }).parse(JSON.parse(await readBounded(response, 400000)));
   const bytes = unbase64(data.content.replace(/\s/g, ''));
-  if (bytes.length > 32768) throw new VaultError('too_large', 413);
+  if (bytes.length > 262144) throw new VaultError('too_large_262144', 413);
   const content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
   await sampledRead(env, { agent_id: admission.agent.id, key_id: admission.key.id, grant_id: admission.grant.id,
     operation: 'github_read_file', status: 'succeeded', request_id: crypto.randomUUID() });
