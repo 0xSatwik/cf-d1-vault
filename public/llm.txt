@@ -101,7 +101,7 @@ any other upstream failure returns upstream_failed. Upstream bodies are never re
 Tools:
 - github_read_file: {"key_label","repository","path"} plus optional "branch".
   repository is owner/repo (mixed case allowed). branch, when given, and path are exact; without branch the repo default branch is read. File must be UTF-8
-  and <=32768 bytes. Paths under .env, .git, secrets, or ending .pem/.key/.p12/.pfx/.env/.ppk,
+  and <=262144 bytes. Paths under .env, .git, secrets, or ending .pem/.key/.p12/.pfx/.env/.ppk,
   or named id_rsa/id_dsa/id_ecdsa/id_ed25519 (plus .pub variants) are refused
   (sensitive_path). Returns {"repository","path","branch","sha","content"}.
 - github_list_issues: {"key_label","repository","page":1-10,"state":"open"|"closed"|"all"}.
